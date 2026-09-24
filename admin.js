@@ -112,6 +112,7 @@ const DEFAULT_CENNIK = window.DEFAULT_CENNIK || [];
 const $ = id => document.getElementById(id);
 let db, auth, storage, fs, authMod, storageMod, currentUser = null;
 let texts = {}, images = {}, cennik = [];
+let storageAvailable = false;
 
 function say(id, msg, type) {
   const el = $(id);
@@ -136,7 +137,8 @@ async function initFirebase() {
   fs = fsMod; authMod = aMod; storageMod = sMod;
   db = fsMod.getFirestore(app);
   auth = aMod.getAuth(app);
-  storage = sMod.getStorage(app);
+  try { storage = sMod.getStorage(app); storageAvailable = true; }
+  catch (e) { storage = null; storageAvailable = false; console.warn("Storage nie je dostupný, nahrávanie súborov bude vypnuté.", e); }
   aMod.onAuthStateChanged(auth, user => {
     currentUser = user;
     $("loginView").hidden = !!user;
@@ -177,8 +179,8 @@ function renderForm() {
           <label>${f.label}
             <div class="img-edit">
               ${cur ? `<img class="thumb" src="${cur}" alt="">` : `<span class="thumb empty">bez fotky</span>`}
-              <input type="text" data-img="${f.key}" value="${cur.replace(/"/g, "&quot;")}" placeholder="URL fotky, alebo nahrajte súbor">
-              <input type="file" accept="image/*" data-upload="${f.key}">
+              <input type="text" data-img="${f.key}" value="${cur.replace(/"/g, "&quot;")}" placeholder="URL fotky">
+              ${storageAvailable ? `<input type="file" accept="image/*" data-upload="${f.key}">` : ""}
             </div>
           </label>`;
       } else {
