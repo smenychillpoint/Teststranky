@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Správa obsahu – Chillpoint</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <div class="wrap bar">
+    <a class="logo" href="index.html"><img src="https://www.chillpoint.sk/wp-content/uploads/2026/05/chillpoint-logo-biele-122x41.webp" width="122" height="41" alt="Chillpoint"></a>
+    <span class="admin-title">Správa obsahu</span>
+  </div>
+</header>
+<main>
+  <div class="wrap admin-wrap">
+
+    <section id="loginView" class="admin-card">
+      <h1>Prihlásenie</h1>
+      <p class="muted">Prihláste sa e-mailom a heslom, ktoré ste vytvorili vo Firebase Authentication.</p>
+      <form id="loginForm" class="form">
+        <label>E-mail<input type="email" name="email" required autocomplete="username"></label>
+        <label>Heslo<input type="password" name="password" required autocomplete="current-password"></label>
+        <button class="btn" id="loginBtn" type="submit">Prihlásiť sa</button>
+        <p class="status" id="loginStatus" role="status" aria-live="polite"></p>
+      </form>
+    </section>
+
+    <section id="editorView" class="admin-card" hidden>
+      <div class="admin-head">
+        <div><h1>Správa obsahu</h1><p class="muted">Prihlásený ako <span id="whoami"></span></p></div>
+        <div class="admin-head-actions">
+          <button class="btn" id="saveBtn" type="button">Uložiť zmeny</button>
+          <button class="btn ghost" id="logoutBtn" type="button">Odhlásiť sa</button>
+        </div>
+      </div>
+      <p class="status" id="editorStatus" role="status" aria-live="polite"></p>
+
+      <h2 class="sm">Cenník</h2>
+      <p class="muted">Pridávajte, upravujte alebo mažte skupiny a položky. Zmeny sa prejavia po stlačení „Uložiť zmeny“.</p>
+      <div id="cennikEdit"></div>
+      <button class="btn ghost sm" id="addGroupBtn" type="button">+ Pridať skupinu</button>
+
+      <h2 class="sm" style="margin-top:40px">Texty a fotky podľa stránok</h2>
+      <div id="fields"></div>
+
+      <button class="btn" id="saveBtn2" type="button" onclick="document.getElementById('saveBtn').click()">Uložiť zmeny</button>
+    </section>
+
+  </div>
+</main>
+<script src="firebase-config.js"></script>
+<script type="module" src="admin.js"></script>
+</body>
+</html>

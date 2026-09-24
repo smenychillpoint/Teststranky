@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kontakt – Chillpoint Trnava</title>
+<meta name="description" content="Kontaktujte laser arénu Chillpoint v Trnave: telefón, e-mail, otváracie hodiny a mapa.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <div class="wrap bar">
+    <a class="logo" href="index.html"><img src="https://www.chillpoint.sk/wp-content/uploads/2026/05/chillpoint-logo-biele-122x41.webp" width="122" height="41" alt="Chillpoint"></a>
+    <button class="burger" id="burger" aria-expanded="false" aria-controls="menu">Menu</button>
+    <nav id="menu" aria-label="Hlavné menu"><ul><li><a href="laser-game.html">Laser game</a></li><li><a href="chill-zona.html">Chill zóna</a></li><li><a href="teambuilding.html">Teambuilding</a></li><li><a href="oslavy.html">Oslavy</a></li><li><a href="cennik.html">Cenník</a></li><li><a href="kontakt.html" class="active" aria-current="page">Kontakt</a></li></ul></nav>
+    <a class="btn top" href="rezervacia.html">Rezervovať</a>
+  </div>
+</header>
+<main>
+<div class="page-hero"><div class="wrap"><h1 data-ck="kontakt.hero.title">Kontaktujte nás</h1><p data-ck="kontakt.hero.subtitle">Využi najrýchlejší kontakt na laser arénu v Trnave. Three..two..one..Yeah!</p></div></div><section><div class="wrap split" style="align-items:start">
+  <div>
+    <h2 class="sm">Nájdite nás a napíšte nám</h2>
+    <p>Náš chill tím vám s radosťou poskytne detailnejšie informácie k laser game, virtuálnej realite, teambuildingom aj k rodinným oslavám.</p>
+    <h3 style="margin-top:28px;font-size:1.2rem">Kontakt</h3>
+    <p style="margin-bottom:4px"><a href="tel:0910836876">0910 836 876</a></p>
+    <p><a href="mailto:rezervacia@chillpoint.sk">rezervacia@chillpoint.sk</a></p>
+    <h3 style="margin-top:20px;font-size:1.2rem">Otváracie hodiny</h3>
+    <ul class="hours"><li><span>Pondelok až štvrtok</span><span>15:00–22:00</span></li><li><span>Piatok</span><span>15:00–24:00</span></li><li><span>Sobota</span><span>13:00–24:00</span></li><li><span>Nedeľa</span><span>13:00–22:00</span></li></ul>
+    <p class="muted" style="font-size:.9rem;margin-top:8px">Zmena otváracích hodín vyhradená.</p>
+    <h3 style="margin-top:20px;font-size:1.2rem">Navštívte nás</h3>
+    <p>Suchovská 3188/12,<br>917 01 Trnava</p>
+  </div>
+  <form class="form" id="contactForm">
+    <h3 style="font-size:1.2rem">Napíšte nám</h3>
+    <label>Vaše meno<input type="text" name="name" required autocomplete="name"></label>
+    <label>Váš email<input type="email" name="email" required autocomplete="email"></label>
+    <label>Vaša správa<textarea name="message" rows="6" required></textarea></label>
+    <button class="btn" type="submit">Odoslať správu</button>
+    <p class="muted" style="font-size:.85rem;margin-top:10px">Ukážka: formulár zatiaľ otvorí e-mailový program s vyplnenou správou. Na priame odosielanie treba napojiť server.</p>
+  </form>
+</div>
+<div class="wrap"><iframe class="map" title="Mapa: Chillpoint laser aréna" loading="lazy" src="https://maps.google.com/maps?q=ChillPoint%20laser%20ar%C3%A9na&t=m&z=14&output=embed&iwloc=near"></iframe></div>
+</section><section class="band"><div class="wrap"><h2 class="sm">Noc je ešte mladá</h2><p>Ak plánujete rozlúčku so slobodou, narodeninovú party alebo teambuilding v našich priestoroch, sme otvorení aj dlhším otváracím hodinám.</p><a class="btn" href="rezervacia.html">Rezervovať teraz</a></div></section><script>
+document.getElementById("contactForm").addEventListener("submit", function(e){
+  e.preventDefault();
+  var f = new FormData(this);
+  var body = "Meno: " + f.get("name") + "\nEmail: " + f.get("email") + "\n\n" + f.get("message");
+  location.href = "mailto:rezervacia@chillpoint.sk?subject=" + encodeURIComponent("Správa z webu od " + f.get("name")) + "&body=" + encodeURIComponent(body);
+});
+</script>
+</main>
+<footer>
+  <div class="wrap">
+    <div class="cols">
+      <div>
+        <a class="logo" href="index.html"><img src="https://www.chillpoint.sk/wp-content/uploads/2026/05/chillpoint-logo-biele-122x41.webp" width="122" height="41" alt="Chillpoint"></a>
+        <p class="muted">Najväčšia laser aréna v Trnave. Otestujte všetky zmysly a zažite to na vlastnej koži.</p>
+      </div>
+      <div>
+        <h4>Kontakt</h4>
+        <ul>
+          <li><a href="mailto:rezervacia@chillpoint.sk">rezervacia@chillpoint.sk</a></li>
+          <li><a href="tel:0910836876">0910 836 876</a></li>
+          <li><a href="https://maps.app.goo.gl/YeS8BFW4q3ne5B8j7">Suchovská cesta 12, 917 01 Trnava</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>Otváracie hodiny</h4>
+        <ul>
+          <li>Po–Št: 15:00–22:00</li><li>Piatok: 15:00–24:00</li>
+          <li>Sobota: 13:00–24:00</li><li>Nedeľa: 13:00–22:00</li>
+        </ul>
+      </div>
+      <div>
+        <h4>Dôležité odkazy</h4>
+        <ul>
+          <li><a href="https://www.chillpoint.sk/ochrana-sukromia/">Zásady ochrany osobných údajov</a></li>
+          <li><a href="https://www.chillpoint.sk/cookies/">Cookies</a></li>
+          <li><a href="admin.html">Prihlásenie (správa)</a></li>
+        </ul>
+      </div>
+    </div>
+    <p class="muted" style="font-size:.9rem">Chill Point s.r.o., 925 32 Veľká Mača 990 · IČO: 48 139 327 · DIČ: 2120058435<br>Copyright © 2026 Chillpoint všetky práva vyhradené</p>
+  </div>
+</footer>
+<script src="nav.js"></script>
+<script src="firebase-config.js"></script>
+<script src="content.js"></script>
+</body>
+</html>
