@@ -1,4 +1,4 @@
-/* Rezervačný kalendár.
+/* Rezervačný sprievodca: 1) počet osôb, 2) čo chcú hrať, 3) termín(y), 4) kontaktné údaje.
    - Ak je vyplnený firebase-config.js, termíny sa ukladajú do Firebase Firestore (naozajstná rezervácia).
    - Inak beží testovací režim: údaje sa ukladajú len do tohto prehliadača (localStorage). */
 
@@ -7,6 +7,13 @@ const SLOT_MINUTES = 30;   // dĺžka jedného políčka
 const DAYS_AHEAD   = 14;   // koľko dní dopredu sa dá rezervovať
 const HOURS = { 0:[13,22], 1:[15,22], 2:[15,22], 3:[15,22], 4:[15,22], 5:[15,24], 6:[13,24] }; // 0 = nedeľa
 const FIREBASE_VERSION = "10.12.2";
+
+const PACKAGES = {
+  hry:     { label: "Len hry", hint: "Vyberte toľko termínov, koľko potrebujete." },
+  "3plus1":{ label: "Ponuka 3+1", hint: "Odporúčame vybrať 4 termíny laser game (3 platené + 1 zadarmo)." },
+  monster: { label: "Monster Chill balíček (185 €, 8–12 ľudí)", hint: "Odporúčame vybrať 3 termíny laser game podľa balíčka Monster Chill." },
+  bigbang: { label: "Big Bang Chill balíček (330 €, 18–26 ľudí)", hint: "Odporúčame vybrať 6 termínov laser game podľa balíčka Big Bang Chill." }
+};
 
 /* ============ POMOCNÉ ============ */
 const $ = id => document.getElementById(id);
@@ -23,8 +30,9 @@ function timesFor(date) {
   return out;
 }
 
-function say(text, type) {           // hlásenie pre používateľa
+function say(text, type) {
   const el = $("status");
+  if (!el) return;
   el.textContent = text || "";
   el.className = "status" + (type ? " " + type : "");
 }
@@ -32,7 +40,7 @@ function say(text, type) {           // hlásenie pre používateľa
 /* ============ ÚLOŽISKO ============ */
 let store = null;
 
-function localStore() {              // testovací režim bez Firebase
+function localStore() {
   const KEY = "chillpoint_test_bookings";
   const read = () => { try { return JSON.parse(localStorage.getItem(KEY)) || []; } catch (e) { return []; } };
   const listeners = new Set();
@@ -69,13 +77,13 @@ async function firebaseStore(cfg) {
       return fs.onSnapshot(q, snap => cb(new Set(snap.docs.map(d => d.data().time))), onError);
     },
     async book(items, c) {
-      const batch = fs.writeBatch(db);             // všetko alebo nič
+      const batch = fs.writeBatch(db);
       for (const it of items) {
         const id = slotId(it.date, it.time);
         batch.set(fs.doc(db, "slots", id), { date: it.date, time: it.time, createdAt: fs.serverTimestamp() });
         batch.set(fs.doc(db, "bookings", id), {
           date: it.date, time: it.time, name: c.name, phone: c.phone, email: c.email,
-          players: c.players, note: c.note, createdAt: fs.serverTimestamp()
+          players: c.players, package: c.package, note: c.note, createdAt: fs.serverTimestamp()
         });
       }
       try { await batch.commit(); }
@@ -95,16 +103,52 @@ async function initStore() {
     catch (e) { console.error(e); say("Nepodarilo sa pripojiť k Firebase, beží testovací režim.", "err"); }
   }
   if (!store) store = localStore();
-  $("mode").textContent = store.mode === "firebase"
+  const modeEl = $("mode");
+  if (modeEl) modeEl.textContent = store.mode === "firebase"
     ? "Pripojené k Firebase: rezervácie sa ukladajú do databázy."
     : "Testovací režim: rezervácie sa ukladajú len v tomto prehliadači.";
-  if (store.mode === "test") { $("resetTest").hidden = false; }
+  if (store.mode === "test" && $("resetTest")) $("resetTest").hidden = false;
 }
 
-/* ============ KALENDÁR ============ */
+/* ============ STAV SPRIEVODCU ============ */
+const wizard = { players: 2, pkg: null };
 const selected = new Map();          // "2026-09-25 15:30" -> {date, time}
-let currentDate = null, unwatch = null;
+let currentDate = null, unwatch = null, calendarBuilt = false;
 
+function goStep(n) {
+  document.querySelectorAll(".wz-panel").forEach(p => p.hidden = Number(p.dataset.panel) !== n);
+  document.querySelectorAll(".wz-step").forEach(s => {
+    const step = Number(s.dataset.step);
+    s.classList.toggle("done", step < n);
+    s.classList.toggle("current", step === n);
+  });
+  if (n === 3 && !calendarBuilt) { calendarBuilt = true; buildDays(); }
+  if (n === 4) renderSummary();
+}
+
+/* --- krok 1: počet osôb --- */
+$("toStep2").addEventListener("click", () => {
+  const v = parseInt($("playersInput").value, 10);
+  if (!v || v < 2 || v > 30) { $("playersInput").focus(); return; }
+  wizard.players = v;
+  goStep(2);
+});
+
+/* --- krok 2: balíček --- */
+document.querySelectorAll(".wz-opt").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".wz-opt").forEach(b => b.classList.remove("selected"));
+    btn.classList.add("selected");
+    wizard.pkg = btn.dataset.pkg;
+    $("toStep3").disabled = false;
+  });
+});
+$("toStep3").addEventListener("click", () => {
+  $("pkgHint").textContent = (PACKAGES[wizard.pkg] || {}).hint || "";
+  goStep(3);
+});
+
+/* --- krok 3: kalendár --- */
 function buildDays() {
   const today = new Date(); today.setHours(12, 0, 0, 0);
   for (let i = 0; i < DAYS_AHEAD; i++) {
@@ -129,10 +173,9 @@ function showDay(dateStr) {
 }
 
 function renderSlots(dateStr, busy) {
-  // ak si niekto medzitým obsadil termín, ktorý som mal vybraný, zruš ho
   for (const t of busy) {
     const key = dateStr + " " + t;
-    if (selected.delete(key)) { say(`Termín ${t} medzitým niekto obsadil, vybrali sme ho z vašej rezervácie.`, "err"); renderSummary(); }
+    if (selected.delete(key)) { renderPicked(); }
   }
   const now = new Date(), isToday = dateStr === fmt(now);
   const wrap = $("slots"); wrap.innerHTML = "";
@@ -158,8 +201,7 @@ function toggle(date, time, btn) {
   selected.has(key) ? selected.delete(key) : selected.set(key, { date, time });
   btn.classList.toggle("selected", selected.has(key));
   btn.setAttribute("aria-pressed", selected.has(key));
-  say("");
-  renderSummary();
+  renderPicked();
 }
 
 function sortedItems() {
@@ -167,30 +209,45 @@ function sortedItems() {
 }
 const label = it => { const d = parse(it.date); return `${dayNames[d.getDay()]} ${d.getDate()}.${d.getMonth() + 1}. o ${it.time}`; };
 
-function renderSummary() {
-  const list = $("list"); list.innerHTML = "";
+function renderPicked() {
+  const list = $("list");
   const items = sortedItems();
-  if (!items.length) list.innerHTML = '<li class="empty">Zatiaľ nie je vybraný žiadny termín.</li>';
+  list.innerHTML = items.length ? "" : '<li class="empty">Zatiaľ nie je vybraný žiadny termín.</li>';
   for (const it of items) {
     const li = document.createElement("li");
     li.innerHTML = `<span>${label(it)}</span>`;
     const rm = document.createElement("button"); rm.type = "button"; rm.textContent = "odstrániť";
-    rm.onclick = () => { selected.delete(it.date + " " + it.time); renderSummary(); showDay(currentDate); };
+    rm.onclick = () => { selected.delete(it.date + " " + it.time); renderPicked(); showDay(currentDate); };
     li.appendChild(rm); list.appendChild(li);
   }
-  $("submit").disabled = !items.length;
-  $("clear").disabled = !items.length;
-  $("submit").textContent = items.length > 1 ? `Rezervovať (${items.length} termíny)` : "Rezervovať";
   document.querySelectorAll(".day").forEach(b => {
     const n = items.filter(i => i.date === b.dataset.date).length;
     b.querySelector(".count").textContent = n ? "✓ " + n : "";
   });
+  $("toStep4").disabled = !items.length;
 }
 
-/* ============ ODOSLANIE ============ */
-$("clear").onclick = () => { selected.clear(); say(""); renderSummary(); showDay(currentDate); };
+$("toStep4").addEventListener("click", () => goStep(4));
 
-$("resetTest").onclick = () => { store.reset(); say("Testovacie rezervácie boli vymazané.", "ok"); };
+/* --- krok 4: súhrn + kontakt --- */
+function renderSummary() {
+  const items = sortedItems();
+  const pkg = PACKAGES[wizard.pkg] || { label: wizard.pkg };
+  $("summary").innerHTML = `
+    <ul class="wz-summary-list">
+      <li><span>Počet osôb</span><b>${wizard.players}</b></li>
+      <li><span>Vybraná možnosť</span><b>${pkg.label}</b></li>
+      <li><span>Termíny</span><b>${items.map(label).join(", ")}</b></li>
+    </ul>`;
+}
+
+document.querySelectorAll("[data-back]").forEach(btn => {
+  btn.addEventListener("click", () => goStep(Number(btn.dataset.back)));
+});
+
+$("resetTest") && $("resetTest").addEventListener("click", () => {
+  store.reset(); say("Testovacie rezervácie boli vymazané.", "ok");
+});
 
 $("bookForm").addEventListener("submit", async e => {
   e.preventDefault();
@@ -200,18 +257,19 @@ $("bookForm").addEventListener("submit", async e => {
   if (!form.reportValidity()) return;
   const f = new FormData(form);
   const customer = {
-    name: f.get("name").trim(), phone: f.get("phone").trim(), email: f.get("email").trim(),
-    players: parseInt(f.get("players"), 10), note: (f.get("note") || "").trim()
+    name: (f.get("firstname").trim() + " " + f.get("lastname").trim()).trim(),
+    phone: f.get("phone").trim(), email: f.get("email").trim(),
+    players: wizard.players, package: wizard.pkg, note: (f.get("note") || "").trim()
   };
   $("submit").disabled = true; say("Odosielam rezerváciu…");
   try {
     await store.book(items, customer);
     say("Rezervácia je uložená: " + items.map(label).join(", ") + ".", "ok");
-    selected.clear(); form.reset(); renderSummary();
+    selected.clear(); form.reset();
+    $("submit").disabled = false;
   } catch (err) {
     if (err.code === "taken") {
-      say("Niektorý z termínov medzitým niekto obsadil. Skontrolujte kalendár a vyberte znova.", "err");
-      showDay(currentDate);
+      say("Niektorý z termínov medzitým niekto obsadil. Vráťte sa na výber termínu a skúste znova.", "err");
     } else {
       console.error(err); say("Rezerváciu sa nepodarilo uložiť. Skúste to prosím znova.", "err");
     }
@@ -219,4 +277,4 @@ $("bookForm").addEventListener("submit", async e => {
   }
 });
 
-initStore().then(() => { buildDays(); renderSummary(); });
+initStore();
