@@ -4,8 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Rezervácia termínu – Chillpoint Trnava</title>
-<meta name="description" content="Online rezervácia laser game v Trnave, ideálna pre 2–30 hráčov.">
+<meta name="description" content="Online rezervácia laser game v Trnave, ideálna pre 2–16 hráčov.">
+<script src="assets/site-config.js"></script>
 <link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="assets/rezervacia.css">
 </head>
 <body>
 <header>
@@ -17,7 +19,9 @@
   </div>
 </header>
 <main>
-<div class="page-hero"><div class="wrap"><h1>Rezervácia termínu</h1><p>Najrýchlejšia rezervácia na laser game v Trnave, ideálna pre 2–30 hráčov.</p></div></div><section><div class="wrap">
+<div class="page-hero"><div class="wrap"><h1>Rezervácia termínu</h1><p>Najrýchlejšia rezervácia na laser game v Trnave, ideálna pre 2–16 hráčov.</p></div></div><section><div class="wrap">
+  <div id="rz"><noscript>Na rezerváciu je potrebný zapnutý JavaScript. Zavolajte nám na 0910 836 876.</noscript></div>
+  <!-- Pôvodný rezervačný formulár (booking.js) – nahradený novou rezerváciou vyššie.
   <div class="booking" id="booking-form">
 
     <div class="wz-steps">
@@ -56,6 +60,7 @@
       <div class="legend"><span class="f">voľné</span><span class="b">obsadené</span><span class="s">vybrané</span></div>
       <div class="slots" id="slots"></div>
       <ul id="list" class="wz-list"></ul>
+      <p class="status" id="slotStatus" role="status" aria-live="polite"></p>
       <div class="wz-nav"><button class="btn ghost" data-back="2" type="button">Späť</button><button class="btn" id="toStep4" type="button" disabled>Pokračovať</button></div>
     </section>
 
@@ -78,6 +83,7 @@
     </section>
 
   </div>
+  -->
 </div></section>
 </main>
 <footer>
@@ -115,7 +121,6 @@
   </div>
 </footer>
 <script src="nav.js"></script>
-<script src="firebase-config.js"></script>
-<script src="booking.js"></script>
+<script src="assets/rezervacia.js"></script>
 </body>
 </html>
