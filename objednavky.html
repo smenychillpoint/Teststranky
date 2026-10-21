@@ -134,7 +134,7 @@ body:has(.login:not(.hide)){overflow:hidden}
 </header>
 <main id="app"></main>
 <!-- pri nahrávaní na GitHub skontroluj: tento súbor = objednavky.html (Objednávky); pri každej úprave zmeň dátum -->
-<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-21c</div>
+<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-21d</div>
 <div id="cart" class="cart hide"></div>
 
 <div id="employeeGate" class="login hide">
@@ -711,6 +711,9 @@ async function callInner(m, [col, id, action], body) {
       // poradie kategórií menu (názvy v poradí) - pri objednávaní aj v Nastaveniach
       if (body.catOrder !== undefined) u.catOrder = [...new Set((Array.isArray(body.catOrder) ? body.catOrder : []).map(x => str(x, 40)).filter(Boolean))].slice(0, 200);
       if (body.tempPos !== undefined) u.tempPos = body.tempPos === 'top' ? 'top' : 'bottom';   // kde sú dočasné stoly
+      // iné % z tržby pre kategóriu: [{n: kategória, p: 0–100}]
+      if (body.catPct !== undefined) u.catPct = (Array.isArray(body.catPct) ? body.catPct : [])
+        .map(x => ({ n: str(x && x.n, 40), p: num(x && x.p) })).filter(x => x.n && x.p >= 0 && x.p <= 100).slice(0, 100);
       // 🧊 ľad / 🥤 poháre podľa kategórie: [{n: kategória, ice: bool, glasses: bool}]
       if (body.catExtras !== undefined) u.catExtras = (Array.isArray(body.catExtras) ? body.catExtras : [])
         .map(x => ({ n: str(x && x.n, 40), ice: !!(x && x.ice), glasses: !!(x && x.glasses) })).filter(x => x.n && (x.ice || x.glasses)).slice(0, 100);
@@ -1052,6 +1055,7 @@ function onData(v) {
     if ((role === 'casnik' || role === 'odniest') && S.orders.some(o => o.status === 'hotova' && prevStatus[o.id] && prevStatus[o.id] !== 'hotova')) beep([660, 990, 1320]);
   }
   prevStatus = st; prevAdded = added;
+  sharePayPctIfNeeded();   // vedúci: % z tržby sa samo uloží pre všetkých, ak ešte nie je (len po načítaní nastavení)
   safeRender();
 }
 
@@ -2984,7 +2988,7 @@ function renderUzavierka() {
   // podiel - základ pre % je tržba bez nich. Zoznam je spoločné nastavenie pre všetky dni (Nastavenia >
   // Zamestnanci, mení len vedúci) - tu sa už len zobrazuje, nedá sa to priamo odškrtnúť.
   const { pctBase, excludedRevenue } = pctBaseFor(paid, total);
-  const pctAmount = pctBase * pct / 100;
+  const pctAmount = pctAmountFor(paid, pctBase, pct);
   // Trinkgeľ za deň - ručne zadaná suma, rozdelí sa rovným dielom medzi všetkých s hodinami; o % z tržby sa delia
   // len tí, ktorým to vedúci v Nastaveniach nevypol (payShares).
   const tip = num(tipOf(dayKey)) || 0;
@@ -3148,7 +3152,7 @@ function recomputePayroll() {
   const dayHours = dayHoursOf(payDayKey());
   const pct = payPct();
   const { pctBase, excludedRevenue } = pctBaseFor(paidToday, total);
-  const pctAmount = pctBase * pct / 100;
+  const pctAmount = pctAmountFor(paidToday, pctBase, pct);
   const tip = num(tipOf(payDayKey())) || 0;
   const { names: checkedNames, sharers, splitShare, tipShare, shares } = payShares(dayHours, pctAmount, tip);
   const hourlyTotal = (S.employees || []).reduce((s, e) => s + (num(dayHours[e.name]) || 0) * (e.wage || 0), 0);
@@ -3184,10 +3188,44 @@ function setPayrollHours(name, val) {
 let sharedPayPct = null, sharedPayPctLoaded = false;
 const accessPctSet = () => !!(S.access && S.access.payPct !== undefined && S.access.payPct !== null);
 const payPct = () => accessPctSet() ? (num(S.access.payPct) || 0) : (sharedPayPct !== null && sharedPayPct !== undefined ? (num(sharedPayPct) || 0) : (num(payroll.pct) || 0));
+let pctAutoSaved = false;
 function sharePayPctIfNeeded() {
-  if (!sharedPayPctLoaded || accessPctSet() || (sharedPayPct !== null && sharedPayPct !== undefined)) return;
+  if (!sharedPayPctLoaded || accessPctSet()) return;
+  const accessLoaded = typeof live !== 'undefined' && live && live.access !== null;
+  // vedúci: číslo, ktoré vidí (spoločné z meta alebo jeho lokálne), sa samo uloží pre všetkých (access.payPct)
+  // – len keď sú nastavenia (access) už načítané, nech sa omylom neprepíše skutočné uložené číslo
+  if (isManager && accessLoaded && !pctAutoSaved) {
+    const v = (sharedPayPct !== null && sharedPayPct !== undefined) ? num(sharedPayPct) : num(payroll.pct);
+    if (v > 0 && v <= 100) { pctAutoSaved = true; call('PUT', '/api/access', { payPct: v }).then(() => db.ref('meta/payPct').set(v)).then(() => toast(`💰 ${v} % z tržby uložené pre všetky zariadenia ✓`)).catch(() => { pctAutoSaved = false; }); return; }
+  }
+  if (sharedPayPct !== null && sharedPayPct !== undefined) return;
   const local = num(payroll.pct) || 0;
   if (local > 0 && local <= 100) db.ref('meta/payPct').set(local).catch(() => {});
+}
+// (2026-10-21) Iné % pre kategóriu (nepovinné, access.catPct = [{n, p}]): napr. Hry 10 % namiesto všeobecných 7 %.
+// Vylúčené položky (Bez %) majú vždy 0. pctAmountFor = základ × všeobecné % + rozdiel pre kategórie s vlastným %.
+function catPctOf(i) {
+  const mi = i.menuId ? S.menu.find(m => m.id === i.menuId) : null;
+  const cat = (mi && mi.category) || i.cat || '';
+  const r = ((S.access && S.access.catPct) || []).find(x => x && x.n === cat);
+  return r ? Number(r.p) : null;
+}
+function pctAmountFor(paidOrders, pctBase, pct) {
+  const noPctSet = new Set((S.access && S.access.noPctItems) || []);
+  let adj = 0;
+  (paidOrders || []).forEach(o => (o.items || []).forEach(i => {
+    if (i.noPct || noPctSet.has(i.name)) return;
+    const cp = catPctOf(i);
+    if (cp !== null) adj += (Number(i.price) || 0) * (Number(i.qty) || 0) * (cp - pct) / 100;
+  }));
+  return Math.max(0, Math.round((pctBase * pct / 100 + adj) * 100) / 100);
+}
+async function setCatPct(enc, val) {
+  if (!isManager) return;
+  const c = decodeURIComponent(enc), raw = String(val).trim(), p = num(raw);
+  const list = ((S.access && S.access.catPct) || []).filter(x => x && x.n !== c);
+  if (raw !== '' && p >= 0 && p <= 100) list.push({ n: c, p });
+  try { await call('PUT', '/api/access', { catPct: list }); toast(raw === '' ? `${c}: bežné %` : `${c}: ${p} % z tržby`); } finally { render(); }
 }
 const noShareSet = () => new Set((S.access && S.access.noShareEmps) || []);
 // kto má hodiny, dostane trinkgeľ; o % z tržby sa delia len tí, čo nie sú v noShareEmps
@@ -3223,7 +3261,7 @@ async function downloadPayrollCsv() {
   const dayHours = dayHoursOf(payDayKey());
   const pct = payPct();
   const { pctBase, excludedRevenue } = pctBaseFor(paidToday, total);
-  const pctAmount = pctBase * pct / 100;
+  const pctAmount = pctAmountFor(paidToday, pctBase, pct);
   const tip = num(tipOf(payDayKey())) || 0;
   const { names, sharers, splitShare, tipShare, shares } = payShares(dayHours, pctAmount, tip);
   const pctPaid = sharers.length ? pctAmount : 0, tipPaid = names.length ? tip : 0;   // reálne vyplatené (ak sa nikto nedelí, nič)
@@ -3537,6 +3575,13 @@ function renderSettings() {
     <h2>🚫 Z čoho personál NEDOSTÁVA %</h2><div class="card">
       <p class="muted" style="font-size:13px;margin:0">Zaškrtni len výnimky (napr. Pixel, vstupné). Všetko ostatné sa ráta do %. Rýchla platba s „🚫 Bez %“ sa vynechá sama.</p>
       <div style="margin-top:8px">${noPctBlock || '<p class="muted" style="font-size:13px">Najprv pridaj položky do menu.</p>'}</div></div>
+    <details style="border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-top:12px" ${((S.access && S.access.catPct) || []).length ? 'open' : ''}>
+      <summary style="cursor:pointer;font-weight:700">➕ Iné % pre kategóriu (nepovinné)${((S.access && S.access.catPct) || []).length ? ` · ${((S.access && S.access.catPct) || []).map(x => esc(x.n) + ' ' + x.p + ' %').join(', ')}` : ''}</summary>
+      <p class="muted" style="font-size:13px;margin:8px 0">Normálne netreba nič – platí ${esc(String(payPct()))} % z celej tržby. Ak chcete z niektorej kategórie viac (alebo menej) %, napíš ho sem. Prázdne = bežné %.</p>
+      ${allCategories().map(c => { const r = ((S.access && S.access.catPct) || []).find(x => x && x.n === c); return `<div class="row" style="gap:8px;align-items:center;padding:5px 0;border-bottom:1px solid var(--line)">
+        <span style="flex:1">${esc(c)}</span>
+        <input type="number" min="0" max="100" step="0.5" inputmode="decimal" placeholder="—" style="width:76px" value="${r ? r.p : ''}" onkeydown="if(event.key==='Enter')this.blur()" onchange="setCatPct('${grpArg(c)}',this.value)"><span class="muted">%</span></div>`; }).join('')}
+    </details>
     <h2>Zamestnanci – mzda a podiel z %</h2><div class="card">
       ${empRows || '<p class="muted">Zatiaľ žiadni zamestnanci. Pridaj ich v Smenách.</p>'}
       <p class="muted" style="font-size:12px;margin-top:8px">Sadzba €/h sa použije vo Výplatnej kalkulačke v Dennej uzávierke (čašníci ju tam nevidia). Kto má odškrtnuté „delí sa o %“, nedostane podiel z percent (napr. brigádnik len na hodinovku) – jeho časť sa rozdelí medzi ostatných; trinkgeľ dostane každý s hodinami.</p></div>`
