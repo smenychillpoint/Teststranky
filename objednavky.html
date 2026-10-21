@@ -134,7 +134,7 @@ body:has(.login:not(.hide)){overflow:hidden}
 </header>
 <main id="app"></main>
 <!-- pri nahrávaní na GitHub skontroluj: tento súbor = objednavky.html (Objednávky); pri každej úprave zmeň dátum -->
-<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-21</div>
+<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-21b</div>
 <div id="cart" class="cart hide"></div>
 
 <div id="employeeGate" class="login hide">
@@ -1200,6 +1200,7 @@ function connect() {
     db.ref('meta/tempGone').on('value', s => { tempGone = s.val() || {}; tryRender(); }, () => { tempGone = {}; });
     db.ref('meta/staffTables').on('value', s => { staffTables = s.val() || {}; tryRender(); }, () => { staffTables = {}; });
     db.ref('meta/soldOut').on('value', s => { soldOut = s.val() || {}; tryRender(); }, () => { soldOut = {}; });
+    db.ref('meta/payPct').on('value', s => { sharedPayPct = s.val(); sharedPayPctLoaded = true; sharePayPctIfNeeded(); tryRender(); }, () => {});
     db.ref('settings/hubAccess').on('value', s => { hubAccess = s.val() || {}; tryRender(); }, () => { hubAccess = {}; });
     // výplaty (hodiny + trinkgeľ) zdieľané medzi zariadeniami; pri prvom načítaní sa prenesú staré lokálne údaje
     let payFirst = true;
@@ -3033,8 +3034,10 @@ function renderUzavierka() {
       ${empRows || '<p class="muted">Zatiaľ žiadni zamestnanci. Pridaj ich v Smenách a nastav im sadzbu v Nastaveniach.</p>'}
       <div class="row" style="margin-top:10px;gap:8px;align-items:center;padding-top:10px;border-top:1px solid var(--line)">
         <span class="muted" style="flex:1;font-size:13px">Percentá z tržby pre personál: <b>${pct} %</b>${noShareSet().size ? ` · nedelia sa: ${esc([...noShareSet()].join(', '))}` : ''}
-          ${(S.access && S.access.payPct !== undefined && S.access.payPct !== null) ? '' : `<br><b style="color:var(--warn)">⚠ Percentá nie sú nastavené spoločne – toto zariadenie berie svoje staré číslo (${pct} %), iné zariadenie môže ukazovať iné.${isManager ? ' Nastav ich tu:' : ' Povedz vedúcemu, nech ich nastaví.'}</b>`}</span>
-        ${isManager && !(S.access && S.access.payPct !== undefined && S.access.payPct !== null) ? `<input type="number" min="0" max="100" step="0.5" inputmode="decimal" style="width:76px" placeholder="%" value="${pct || ''}" onkeydown="if(event.key==='Enter')this.blur()" onchange="setPayPct(this.value)">` : ''}
+          ${accessPctSet() ? '' : (sharedPayPct !== null && sharedPayPct !== undefined)
+            ? `<br><small>(spoločné pre všetky zariadenia${isManager ? ' – potvrď alebo zmeň vpravo' : ''})</small>`
+            : `<br><b style="color:var(--warn)">⚠ Percentá nie sú nastavené spoločne – toto zariadenie berie svoje staré číslo (${pct} %), iné zariadenie môže ukazovať iné.${isManager ? ' Nastav ich tu:' : ' Povedz vedúcemu, nech ich nastaví.'}</b>`}</span>
+        ${isManager && !accessPctSet() ? `<input type="number" min="0" max="100" step="0.5" inputmode="decimal" style="width:76px" placeholder="%" value="${pct || ''}" onkeydown="if(event.key==='Enter')this.blur()" onchange="setPayPct(this.value)">` : ''}
         ${isManager ? `<a href="#" onclick="role='nastavenia';settingsTab='zamestnanci';store.set('role',role);render();return false" style="font-size:13px">zmeniť v Nastaveniach</a>` : ''}
       </div>
       ${(S.access && S.access.noPctItems && S.access.noPctItems.length) ? `<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--line)">
@@ -3175,7 +3178,17 @@ function setPayrollHours(name, val) {
 }
 // % z tržby nastavuje vedúci v Nastaveniach -> Zamestnanci (access.payPct, zdieľané). Kým ho nenastaví, platí
 // staré lokálne nastavenie z tohto zariadenia (payroll.pct), nech sa výpočet zo dňa na deň nezmení.
-const payPct = () => (S.access && S.access.payPct !== undefined && S.access.payPct !== null) ? (num(S.access.payPct) || 0) : (num(payroll.pct) || 0);
+// (2026-10-21) poradie: access.payPct (nastavil vedúci) → meta/payPct (spoločné, napr. prenesené z tabletu) → lokálne.
+// Lokálne číslo jedného zariadenia (tablet) sa samo zdieľa do meta/payPct, kým vedúci nenastaví vlastné – inak mal
+// každý mobil iné % (Patrik na iPhone 0 %, tablet 10 %).
+let sharedPayPct = null, sharedPayPctLoaded = false;
+const accessPctSet = () => !!(S.access && S.access.payPct !== undefined && S.access.payPct !== null);
+const payPct = () => accessPctSet() ? (num(S.access.payPct) || 0) : (sharedPayPct !== null && sharedPayPct !== undefined ? (num(sharedPayPct) || 0) : (num(payroll.pct) || 0));
+function sharePayPctIfNeeded() {
+  if (!sharedPayPctLoaded || accessPctSet() || (sharedPayPct !== null && sharedPayPct !== undefined)) return;
+  const local = num(payroll.pct) || 0;
+  if (local > 0 && local <= 100) db.ref('meta/payPct').set(local).catch(() => {});
+}
 const noShareSet = () => new Set((S.access && S.access.noShareEmps) || []);
 // kto má hodiny, dostane trinkgeľ; o % z tržby sa delia len tí, čo nie sú v noShareEmps
 function payShares(dayHours, pctAmount, tip) {
@@ -3184,7 +3197,12 @@ function payShares(dayHours, pctAmount, tip) {
 }
 const payNoteHtml = (hourly, sharing, splitShare, tip, tipShare, total) =>
   `hodinovka ${eur(hourly)} + ${sharing ? 'podiel z tržby ' + eur(splitShare) : '<i>bez podielu z %</i>'} = hodinovka a percentá <b>${eur(hourly + (sharing ? splitShare : 0))}</b>${tip > 0 ? ` · + trinkgeľ ${eur(tipShare)} = spolu <b>${eur(total)}</b>` : ''}`;
-async function setPayPct(val) { if (!isManager) return; await call('PUT', '/api/access', { payPct: val }); toast('Percentá uložené ✓'); }
+async function setPayPct(val) {
+  if (!isManager) return;
+  await call('PUT', '/api/access', { payPct: val });
+  try { await db.ref('meta/payPct').set(num(val) || 0); } catch (e) {}   // rovnaké číslo aj do spoločného meta
+  toast('Percentá uložené pre všetky zariadenia ✓');
+}
 async function toggleNoShareEmp(name, share) {
   if (!isManager) return;
   const set = noShareSet(); if (share) set.delete(name); else set.add(name);
