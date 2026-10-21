@@ -134,7 +134,7 @@ body:has(.login:not(.hide)){overflow:hidden}
 </header>
 <main id="app"></main>
 <!-- pri nahrávaní na GitHub skontroluj: tento súbor = objednavky.html (Objednávky); pri každej úprave zmeň dátum -->
-<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-21b</div>
+<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-21c</div>
 <div id="cart" class="cart hide"></div>
 
 <div id="employeeGate" class="login hide">
@@ -3199,7 +3199,8 @@ const payNoteHtml = (hourly, sharing, splitShare, tip, tipShare, total) =>
   `hodinovka ${eur(hourly)} + ${sharing ? 'podiel z tržby ' + eur(splitShare) : '<i>bez podielu z %</i>'} = hodinovka a percentá <b>${eur(hourly + (sharing ? splitShare : 0))}</b>${tip > 0 ? ` · + trinkgeľ ${eur(tipShare)} = spolu <b>${eur(total)}</b>` : ''}`;
 async function setPayPct(val) {
   if (!isManager) return;
-  await call('PUT', '/api/access', { payPct: val });
+  const v = num(val); if (!(v >= 0 && v <= 100)) return toast('Zadaj % od 0 do 100');
+  await call('PUT', '/api/access', { payPct: v });
   try { await db.ref('meta/payPct').set(num(val) || 0); } catch (e) {}   // rovnaké číslo aj do spoločného meta
   toast('Percentá uložené pre všetky zariadenia ✓');
 }
@@ -3521,19 +3522,25 @@ function renderSettings() {
         <span style="flex:1">${esc(c)}</span>
         <input type="number" min="0" max="100" step="5" inputmode="numeric" placeholder="0" style="width:80px" value="${sdMap[c] != null ? sdMap[c] : ''}"
           onkeydown="if(event.key==='Enter')this.blur()" onchange="setStaffDisc('${grpArg(c)}',this.value)"><span class="muted">%</span></div>`).join('') || '<p class="muted">Najprv pridaj kategórie v Menu.</p>'}</div>`;
-  const zamestnanciTab = staffDiscCard + `<h2>Percentá z tržby pre personál</h2><div class="card">
-      <div class="row" style="gap:8px;align-items:center">
-        <label class="muted" style="flex:1;font-size:13px">Koľko % z dennej tržby sa rozdelí medzi personál</label>
-        <input type="number" min="0" max="100" step="0.5" inputmode="decimal" style="width:80px" value="${esc(String(payPct()))}"
-          onkeydown="if(event.key==='Enter')this.blur()" onchange="setPayPct(this.value)"><span class="muted">%</span>
+  // (2026-10-21) 1) % z CELEJ tržby (s tlačidlom Uložiť – číslo v políčku mohlo byť len lokálne a neuložené),
+  // 2) hneď pod tým "Z čoho nedostávajú %" (výnimky), 3) zamestnanci, 4) zamestnanecké zľavy
+  const pctSaved = accessPctSet();
+  const zamestnanciTab = `<h2>💰 Percentá z tržby pre personál</h2><div class="card">
+      <div class="row" style="gap:8px;align-items:center;flex-wrap:wrap">
+        <label style="flex:1;min-width:180px;font-size:14px"><b>Koľko % z celej dennej tržby</b> dostane personál</label>
+        <input id="payPctIn" type="number" min="0" max="100" step="0.5" inputmode="decimal" style="width:80px;font-size:18px;font-weight:700" value="${esc(String(payPct()))}"
+          onkeydown="if(event.key==='Enter'){this.blur();setPayPct(this.value)}"><span class="muted">%</span>
+        <button class="btn ${pctSaved ? 'ghost' : ''}" style="width:auto;padding:8px 14px" onclick="setPayPct($('#payPctIn').value)">💾 Uložiť pre všetkých</button>
       </div>
-      <p class="muted" style="font-size:12px;margin:8px 0 0">Platí pre všetky zariadenia a všetky dni. Rozdelí sa rovným dielom medzi tých, čo majú v Uzávierke zapísané hodiny a majú nižšie zaškrtnuté „delí sa o %“.</p></div>
+      <p style="font-size:13px;margin:8px 0 0;${pctSaved ? 'color:var(--ok)' : 'color:var(--warn);font-weight:700'}">${pctSaved ? `✓ Uložené pre všetky zariadenia: ${esc(String(S.access.payPct))} %` : '⚠ Zatiaľ NIE JE uložené spoločne – ťukni „Uložiť pre všetkých“, inak každý mobil ráta inak.'}</p>
+      <p class="muted" style="font-size:12px;margin:6px 0 0">Ráta sa z celej tržby dňa, okrem položiek nižšie. Rozdelí sa rovným dielom medzi tých, čo majú v Uzávierke zapísané hodiny (a nemajú odškrtnuté „delí sa o %“).</p></div>
+    <h2>🚫 Z čoho personál NEDOSTÁVA %</h2><div class="card">
+      <p class="muted" style="font-size:13px;margin:0">Zaškrtni len výnimky (napr. Pixel, vstupné). Všetko ostatné sa ráta do %. Rýchla platba s „🚫 Bez %“ sa vynechá sama.</p>
+      <div style="margin-top:8px">${noPctBlock || '<p class="muted" style="font-size:13px">Najprv pridaj položky do menu.</p>'}</div></div>
     <h2>Zamestnanci – mzda a podiel z %</h2><div class="card">
       ${empRows || '<p class="muted">Zatiaľ žiadni zamestnanci. Pridaj ich v Smenách.</p>'}
-      <p class="muted" style="font-size:12px;margin-top:8px">Sadzba €/h sa použije vo Výplatnej kalkulačke v Dennej uzávierke (čašníci ju tam nevidia). Kto má odškrtnuté „delí sa o %“, nedostane podiel z percent (napr. brigádnik len na hodinovku) – jeho časť sa rozdelí medzi ostatných; trinkgeľ dostane každý s hodinami.</p></div>
-    <h2>Bez % z tržby</h2><div class="card">
-      <p class="muted" style="font-size:13px;margin:0">Z týchto konkrétnych položiek (napr. len Pixel, nie celé Hry) sa personálu neráta percentuálny podiel z tržby vo Výplatnej kalkulačke – platí pre všetky dni, kým to tu nezmeníš.</p>
-      <div style="margin-top:8px">${noPctBlock || '<p class="muted" style="font-size:13px">Najprv pridaj položky do menu.</p>'}</div></div>`;
+      <p class="muted" style="font-size:12px;margin-top:8px">Sadzba €/h sa použije vo Výplatnej kalkulačke v Dennej uzávierke (čašníci ju tam nevidia). Kto má odškrtnuté „delí sa o %“, nedostane podiel z percent (napr. brigádnik len na hodinovku) – jeho časť sa rozdelí medzi ostatných; trinkgeľ dostane každý s hodinami.</p></div>`
+    + staffDiscCard;
 
   const zariadenieTab = `<h2>Prístup do uzávierky</h2><div class="card">
       <label class="muted" style="font-size:13px">PIN, ktorým sa do Dennej uzávierky dostane aj niekto iný ako vedúci (napr. keď nie si na prevádzke)</label>
