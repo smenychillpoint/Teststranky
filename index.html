@@ -1,468 +1,103 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="sk">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <title>ChillPoint</title>
-  <meta name="description" content="ChillPoint Laser Aréna Trnava – smeny, objednávky a nákupný zoznam">
-  <meta name="theme-color" content="#0a0c0f">
-  <link rel="manifest" href="manifest.webmanifest">
-  <link rel="icon" type="image/png" href="icon-192.png">
-  <link rel="apple-touch-icon" href="icon-192.png">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-title" content="ChillPoint">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black">
-  <link rel="preconnect" href="https://www.gstatic.com" crossorigin>
-  <link rel="preconnect" href="https://chillpoint-smeny-350c4-default-rtdb.europe-west1.firebasedatabase.app">
-  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-auth-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-database-compat.js"></script>
-  <style>
-    :root{--yellow:#f5bb16;--black:#0a0c0f;--panel:#17191d;--line:#34373c;--muted:#a7a9ad;--white:#fff;--red:#ff6c6c;--green:#5fd67a;--blue:#6fb3ff}
-    *{box-sizing:border-box}
-    html,body{margin:0;background:var(--black);color:var(--white);font-family:Arial,Helvetica,sans-serif;overflow-x:clip}
-    .wrap{width:min(560px,100% - 28px);margin:0 auto;padding:20px 0 40px}
-    .top{display:flex;align-items:center;gap:12px;margin-bottom:20px}
-    .logo{width:48px;height:48px;border:3px solid var(--yellow);border-radius:50%;display:grid;place-items:center;font-weight:900;color:var(--yellow);font-size:14px;flex:none}
-    .brand{flex:1;min-width:0}
-    .brand b{display:block;font-size:19px;letter-spacing:.06em;line-height:1}
-    .brand small{display:block;color:var(--muted);font-size:11px;letter-spacing:.12em;margin-top:4px;text-transform:uppercase}
-    .who{font-size:13px;text-align:right;color:var(--muted)}
-    .who b{color:var(--white);display:block;font-size:14px}
-    .who button{background:none;border:0;color:var(--yellow);font:inherit;font-size:12px;cursor:pointer;padding:2px 0;text-decoration:underline}
-    h1{font-size:28px;margin:0 0 16px;text-transform:uppercase}
-    h2{font-size:12px;letter-spacing:.12em;color:var(--muted);margin:22px 0 8px;text-transform:uppercase}
-    .card{background:var(--panel);border:1px solid var(--line);padding:16px;margin-bottom:12px}
-    .card.today{border-color:var(--yellow);background:#1d1a0f}
-    .card.hand{border-color:#2f5b8a;background:#0f1824}
-    .card h3{margin:0 0 10px;font-size:16px;display:flex;justify-content:space-between;align-items:center;gap:8px}
-    .today h3{color:var(--yellow)}.hand h3{color:var(--blue)}
-    .people{font-size:14px;line-height:1.5;margin-bottom:10px}
-    .stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
-    .stat{background:#0d0f11;border:1px solid var(--line);padding:8px 10px;text-decoration:none;color:var(--white);display:block;cursor:pointer;font:inherit;text-align:left}
-    .stat small{display:block;color:var(--muted);font-size:11px}
-    .stat b{font-size:20px}
-    .note{font-size:13px;color:#d9dbde;margin-top:10px;line-height:1.45}
-    .hitem{border-top:1px solid #23344a;padding:10px 0}
-    .hitem:first-of-type{border-top:0;padding-top:0}
-    .hitem p{margin:0 0 6px;font-size:14px;line-height:1.45;white-space:pre-wrap}
-    .meta{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12px;color:var(--muted);flex-wrap:wrap}
-    .btn{background:var(--yellow);color:#111;border:0;font:inherit;font-weight:800;padding:12px 16px;cursor:pointer;text-transform:uppercase;letter-spacing:.03em}
-    .btn.sm{padding:6px 10px;font-size:12px}
-    .btn.ghost{background:transparent;color:var(--white);border:1px solid var(--line)}
-    .btn:disabled{opacity:.5}
-    input,select,textarea{width:100%;background:#0d0f11;color:#fff;border:1px solid #55585c;padding:11px;font:inherit;font-size:16px;margin-bottom:10px}
-    textarea{min-height:80px;resize:vertical}
-    .err{color:var(--red);font-size:13px;min-height:18px;margin-bottom:6px}
-    .link{background:none;border:0;color:var(--muted);text-decoration:underline;font:inherit;font-size:13px;cursor:pointer;padding:6px 0}
-    .tiles{display:grid;gap:10px}
-    .tile{display:flex;align-items:center;gap:16px;width:100%;text-align:left;background:var(--panel);border:1px solid var(--line);border-left:6px solid var(--yellow);color:var(--white);
-      padding:18px 16px;text-decoration:none;font:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent}
-    .tile:hover,.tile:focus-visible{border-color:var(--yellow);outline:none}
-    .tile .ic{font-size:30px;flex:0 0 42px;text-align:center}
-    .tile .tx{flex:1;min-width:0}
-    .tile .tx b{display:block;font-size:19px;text-transform:uppercase;letter-spacing:.03em}
-    .tile .tx span{display:block;color:var(--muted);font-size:13px;margin-top:3px;line-height:1.35}
-    .tile .tx .badge{display:inline-block;background:var(--yellow);color:#111;font-weight:900;font-size:13px;padding:2px 8px;margin:0 0 0 8px;vertical-align:middle;letter-spacing:0}
-    .tile .arr{color:var(--yellow);font-size:22px;font-weight:900}
-    .tile.dashed{border-left-style:dashed;border-left-color:var(--blue)}
-    .shop{background:#111316;border:1px solid var(--line);border-top:0;padding:4px 16px 16px;display:none}
-    .shop.open{display:block}
-    .shop h5{margin:14px 0 6px;font-size:11px;letter-spacing:.1em;color:var(--muted)}
-    .shop .it{padding:8px 0;border-bottom:1px solid #26292d;font-size:15px}
-    .shop .it small{color:var(--muted)}
-    .empty{color:var(--muted);font-size:13px;padding:6px 0}
-    .shop a.go{display:block;margin-top:14px;text-align:center;background:var(--yellow);color:#111;font-weight:800;text-decoration:none;padding:12px;text-transform:uppercase}
-    table.acc{width:100%;border-collapse:collapse;font-size:13px}
-    table.acc th{color:var(--muted);font-weight:400;font-size:11px;text-align:center;padding:4px 2px}
-    table.acc th:first-child,table.acc td:first-child{text-align:left}
-    table.acc td{border-top:1px solid #26292d;padding:8px 2px;text-align:center}
-    table.acc input{width:20px;height:20px;margin:0;accent-color:var(--yellow)}
-    footer{color:var(--muted);font-size:11px;opacity:.6;text-align:center;margin-top:28px}
-    .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--yellow);color:#111;font-weight:700;padding:10px 16px;z-index:9;max-width:90vw}
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chillpoint – Najväčšia laser aréna v Trnave</title>
+<meta name="description" content="Najväčšia laser aréna v Trnave. Laser game, chill zóna, oslavy a teambuildingy na jednom mieste.">
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div class="wrap" id="app"><p class="empty">Načítavam…</p></div>
-  <script>
-  // ===== ÚVODNÁ STRÁNKA ChillPoint =====
-  // Rozcestník + nástenka "Dnes" + odovzdávka smeny + jedno prihlásenie pre Smeny aj Objednávky
-  // (nastaví cp_myname pre Smeny a waiter pre Objednávky) + vedúci nastavuje prístupy zamestnancov.
-  const MANAGER_EMAIL = 'vedouci@chillpoint-smeny.sk';
-  // zdieľané zariadenie (rovnaké ako v Objednávkach) - aby sa dali čítať rezervácie a odovzdávky
-  const DEVICE_EMAIL = 'zariadenie@chillpoint-smeny.sk', DEVICE_PASSWORD = 'CP-PcZtW5wlmH9xuY';
-  // časti, ku ktorým vedúci nastavuje prístup (settings/hubAccess/e/<meno>/<kľúč> = false -> nemá prístup)
-  const AREAS = [['smeny', '📅 Smeny'], ['objednavky', '🍹 Objednávky'], ['kupit', '📦 Kúpiť'], ['odovzdavka', '📝 Odovzdávka']];
-  const DAY_NAMES = ['nedeľa', 'pondelok', 'utorok', 'streda', 'štvrtok', 'piatok', 'sobota'];
+<header>
+  <div class="wrap bar">
+    <a class="logo" href="index.html"><img src="https://www.chillpoint.sk/wp-content/uploads/2026/05/chillpoint-logo-biele-122x41.webp" width="122" height="41" alt="Chillpoint"></a>
+    <button class="burger" id="burger" aria-expanded="false" aria-controls="menu">Menu</button>
+    <nav id="menu" aria-label="Hlavné menu"><ul><li><a href="laser-game.html">Laser game</a></li><li><a href="chill-zona.html">Chill zóna</a></li><li><a href="teambuilding.html">Teambuilding</a></li><li><a href="oslavy.html">Oslavy</a></li><li><a href="cennik.html">Cenník</a></li><li><a href="kontakt.html">Kontakt</a></li></ul></nav>
+    <a class="btn top" href="rezervacia.html">Rezervovať</a>
+  </div>
+</header>
+<main>
 
-  const $ = id => document.getElementById(id);
-  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  const enc = n => encodeURIComponent(n).replace(/\./g, '%2E');
-  const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  const hhmm = t => { const d = new Date(t); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
-  // pracovný deň od 6:00 do 6:00 - o 1:00 v noci je to ešte "dnešný" večer (rovnako ako Uzávierka)
-  const bizDate = () => new Date(Date.now() - 6 * 3600e3);
-  const ls = { get: k => { try { return localStorage.getItem(k); } catch (e) { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} }, del: k => { try { localStorage.removeItem(k); } catch (e) {} } };
-  function toast(m) { const t = document.createElement('div'); t.className = 'toast'; t.textContent = m; document.body.appendChild(t); setTimeout(() => t.remove(), 2600); }
+<section class="hero">
+  <div class="wrap">
+    <h1 data-ck="index.hero.title">Najväčšia laser aréna v Trnave</h1>
+    <p data-ck="index.hero.subtitle">Laser aréna s unikátnym industriálnym priestorom, kde sa stretáva adrenalín, zábava a dokonalý chill v jednom bode.</p>
+    <div class="actions"><a class="btn" href="rezervacia.html">Rezervovať teraz</a><a class="btn ghost" href="laser-game.html">Ako to prebieha</a></div>
+    <div class="stats">
+      <div><strong>1 400 m²</strong>chill plochy</div>
+      <div><strong>100 %</strong>bezpečná laser game</div>
+      <div><strong>Hi-tech</strong>technológie</div>
+    </div>
+  </div>
+</section>
+<section><div class="wrap split">
+  <div><h2 data-ck="index.about.title">Miesto pre tých, čo sa chcú baviť naplno</h2><p data-ck="index.about.p1">Miesto, kde sa prestáva skrolovať a začína hra. U nás ide o rýchle reflexy, dobrú partiu a momenty, keď sa z obyčajného stretnutia stane epický zážitok. Či prídeš vyhrať, zabaviť sa alebo si len vyčistiť hlavu, odídeš s chuťou dať si ešte jedno kolo.</p><p><a class="btn" href="rezervacia.html">Rezervovať termín</a> <a class="btn ghost" href="kontakt.html">Kontaktuj nás</a></p></div>
+  <div class="media"><img class="pic" data-cimg="index.about.img" loading="lazy" src="https://www.chillpoint.sk/wp-content/uploads/2026/07/laser-game13-1024x480.webp" alt="Hráči v akcii počas laser game"></div>
+</div></section>
+<section class="alt"><div class="wrap split rev">
+  <div><h2 data-ck="index.laserteaser.title">Bez káblov, bez obmedzení a naplno v hre</h2><p data-ck="index.laserteaser.p1">Ako prví sme otvorili laser game v Trnave a vieme, čo skutočný hráč potrebuje. V našej laser game ťa nezväzujú žiadne káble. Môžeš sa hýbať mrštne ako puma a strieľať „na pána“ jednou rukou. Na hrudi ťa netlačí žiadna vesta. To, čo cítiš, je len tvoja túžba vyhrať.</p><ul class="ticks"><li>Pravidelne ti postavíme nový labyrint</li><li>Zásah v laser game nebolí a nezašpiní šatstvo</li></ul><a class="btn" href="laser-game.html">Chcem hrať laser game</a></div>
+  <div class="media"><img class="pic" data-cimg="index.laserteaser.img" loading="lazy" src="https://www.chillpoint.sk/wp-content/uploads/2026/07/laser-game4.webp" alt="Laser game v Chillpointe"></div>
+</div></section>
+<section>
+  <div class="wrap grid" style="grid-template-columns:repeat(auto-fit,minmax(300px,1fr))">
+    <article class="tile"><img data-cimg="index.tile-oslavy.img" loading="lazy" src="https://www.chillpoint.sk/wp-content/uploads/2026/07/oslavy1.webp" alt="Narodeninová oslava v Chillpointe"><div><h3 data-ck="index.tile-oslavy.title">Narodeninové oslavy</h3><p data-ck="index.tile-oslavy.p">Ak túžite po nevšednom zážitku, rozbaľte to u nás hráčskou narodeninovou odyseou. Full servis party, na ktorú budete dlho spomínať.</p><p style="margin-top:14px"><a class="btn ghost" href="oslavy.html">Chcem oslavu</a></p></div></article>
+    <article class="tile"><img data-cimg="index.tile-team.img" loading="lazy" src="https://www.chillpoint.sk/wp-content/uploads/2026/07/team2.webp" alt="Firemný teambuilding v Chillpointe"><div><h3 data-ck="index.tile-team.title">Firemné teambuildingy</h3><p data-ck="index.tile-team.p">Multižánrový objekt na firemné teambuildingy a večierky s kapacitou až pre 250 ľudí, vo vnútri aj pod holým nebom.</p><p style="margin-top:14px"><a class="btn ghost" href="teambuilding.html">Chcem teambuilding</a></p></div></article>
+  </div>
+</section>
+<section class="quote"><div class="wrap"><figure><blockquote data-ck="index.quote.text">„ChillPoint som otvoril v roku 2015 s túžbou priniesť do Trnavy unikátnu zábavu, aká tu ešte nebola a skombinovať ju s nevšedným priestorom, kde prevláda pohodlie, príjemná atmosféra a odchádza sa z neho so zážitkami a novými priateľstvami!“<cite data-ck="index.quote.author">František Nagy</cite></blockquote></figure></div></section>
+<section class="alt">
+  <div class="wrap">
+    <h2>Galéria</h2>
+    <p class="muted">Energia, napätie, víťazstvá aj momenty medzi tým.</p>
+    <div class="gallery">
+      <img loading="lazy" data-cimg="index.gallery.1" src="https://www.chillpoint.sk/wp-content/uploads/2026/07/laser-game13-1024x480.webp" alt="Hráči v akcii počas laser game"><img loading="lazy" data-cimg="index.gallery.2" src="https://www.chillpoint.sk/wp-content/uploads/2026/07/biliard1.webp" alt="Biliardový stôl v Chill Zóne"><img loading="lazy" data-cimg="index.gallery.3" src="https://www.chillpoint.sk/wp-content/uploads/2026/07/airhockey1.webp" alt="Air hockey stôl v Chill Zóne"><img loading="lazy" data-cimg="index.gallery.4" src="https://www.chillpoint.sk/wp-content/uploads/2026/07/laser-game15-1024x431.webp" alt="Laser game v Chillpointe"><img loading="lazy" data-cimg="index.gallery.5" src="https://www.chillpoint.sk/wp-content/uploads/2026/07/playstation1.webp" alt="PlayStation v Chill Zóne"><img loading="lazy" data-cimg="index.gallery.6" src="https://www.chillpoint.sk/wp-content/uploads/2026/07/laser-game4.webp" alt="Laser game v Chillpointe">
+    </div>
+  </div>
+</section>
+<section>
+  <div class="wrap grid" style="grid-template-columns:repeat(auto-fit,minmax(300px,1fr))">
+    <article class="service"><p class="muted" style="margin-bottom:4px">Adrenalín</p><h3>Laser game</h3><p class="muted">Naša laser aréna skrýva mega labyrint, v ktorom budete lapať po dychu.</p><a class="btn ghost" href="laser-game.html">Chcem hrať laser game</a></article>
+    <article class="service"><p class="muted" style="margin-bottom:4px">Relax</p><h3>Chillzóna</h3><p class="muted">Naša chillzóna ponúka priestor na oddych a virtuálne zážitky pre celú partiu.</p><a class="btn ghost" href="chill-zona.html">Chcem chillovať</a></article>
+  </div>
+</section>
 
-  let me = ls.get('cp_myname') || '';
-  let user = null, isMgr = false, authReady = false;
-  // (2026-10-16) Vedúci si môže prepnúť "👁 zobrazenie ako zamestnanec" (bez kódu – je overený heslom vedúceho).
-  // isMgrAuth = naozaj prihlásený vedúci (Firebase Auth); isMgr = správa sa ako vedúci (false počas zobrazenia ako X).
-  // cp_viewAs v localStorage čítajú aj Smeny a Objednávky (tam sa vedúci tiež správa ako ten zamestnanec).
-  let isMgrAuth = false, viewAs = ls.get('cp_viewAs') || '';
-  function applyView() {
-    if (isMgrAuth && viewAs) { isMgr = false; me = viewAs; }
-    else { isMgr = isMgrAuth; if (!isMgrAuth && viewAs && authReady) { viewAs = ''; ls.del('cp_viewAs'); } }
-  }
-  function viewAsEmp(name) {
-    if (!isMgrAuth || !name) return;
-    viewAs = name; ls.set('cp_viewAs', name); ls.set('cp_myname', name); ls.set('waiter', JSON.stringify(name));
-    applyView(); toast(`👁 Zobrazuješ ako ${name}`); render();
-  }
-  function backToMgr() {
-    viewAs = ''; me = ''; ls.del('cp_viewAs'); ls.del('cp_myname'); ls.set('waiter', JSON.stringify(''));
-    applyView(); toast('⚡ Späť ako vedúci'); render();
-  }
-  let emps = [], day = {}, todos = {}, board = {}, notices = {}, queue = {}, handover = {}, access = {}, upcoming = {};
-  let swaps = {}, minCfg = {}, weekCfg = {}, featCfg = {};
-  // ---- 📋 Na vybavenie (len vedúci, 2026-10-19) ----
-  // minimum ľudí na deň: číslo zadané pri dni > tabuľka podľa dňa v týždni (leto/zima) > všeobecné minimum
-  // (obdobia ako Vianoce sa tu nerátajú – presne to ukáže kalendár v Smenách)
-  function hubDayMin(key, d) {
-    if (d.min !== undefined && d.min !== null && d.min !== '') return Math.max(0, Number(d.min) || 0);
-    if (minCfg.enabled !== true) return 0;
-    const m = +key.slice(5, 7), a = weekCfg.summerFrom || 5, b = weekCfg.summerTo || 9;
-    const season = (a <= b ? (m >= a && m <= b) : (m >= a || m <= b)) ? 'summer' : 'winter';
-    const t = ((weekCfg[season] || {})[new Date(key + 'T12:00:00').getDay()] || {});
-    return Math.max(0, t.min !== undefined && t.min !== null ? Number(t.min) || 0 : Number(minCfg.people) || 0);
-  }
-  function todoItems() {
-    const out = [], today = iso(new Date());
-    const empsOf = d => (Array.isArray(d.employees) ? d.employees : Object.values(d.employees || {})).filter(Boolean);
-    // výmeny čakajúce na schválenie
-    const sw = Object.values(swaps || {}).filter(x => x && x.status === 'pending_manager').length;
-    if (sw) out.push(['🔁', `Výmeny smien na schválenie: <b>${sw}</b>`, 'smeny.html']);
-    // chýbajúci ľudia najbližších 7 dní
-    const short = [];
-    for (let i = 0; i < 7; i++) { const dt = new Date(); dt.setDate(dt.getDate() + i); const k = iso(dt), d = upcoming[k] || {};
-      if (d.off) continue; const need = hubDayMin(k, d), have = empsOf(d).length;
-      if (need > have) short.push(`${DAY_NAMES[dt.getDay()].slice(0, 2)} ${dt.getDate()}. ${dt.getMonth() + 1}. (chýba ${need - have})`); }
-    if (short.length) out.push(['⚠', `Chýbajú ľudia: ${short.join(', ')}`, 'smeny.html']);
-    // nezavreté dni najbližšie 3 dni, kde už niekto je
-    const open3 = [];
-    for (let i = 0; i < 3; i++) { const dt = new Date(); dt.setDate(dt.getDate() + i); const k = iso(dt), d = upcoming[k] || {};
-      if (!d.off && !d.closed && empsOf(d).length) open3.push(`${DAY_NAMES[dt.getDay()].slice(0, 2)} ${dt.getDate()}. ${dt.getMonth() + 1}.`); }
-    if (open3.length) out.push(['⏳', `Nezavreté dni: ${open3.join(', ')}`, 'smeny.html']);
-    // nepotvrdená účasť (ak je funkcia zapnutá) – zavreté dni od dnes 7 dní
-    if (featCfg.confirm !== false) {
-      let n = 0;
-      for (let i = 0; i < 7; i++) { const dt = new Date(); dt.setDate(dt.getDate() + i); const d = upcoming[iso(dt)] || {};
-        if (d.closed && !d.off) n += empsOf(d).filter(nm => !(d.cf || {})[enc(nm)]).length; }
-      if (n) out.push(['✋', `Nepotvrdená účasť (7 dní): <b>${n}</b>`, 'smeny.html']);
-    }
-    // nevysporiadané "vzal/a som si" (60 dní)
-    let tk = 0;
-    Object.keys(upcoming || {}).forEach(k => { if (k > today) return; const dl = (upcoming[k] || {}).dl || {};
-      Object.values(dl).forEach(x => { if (x && x.k === 'taken' && !x.r) tk++; }); });
-    if (tk) out.push(['🧾', `Nevysporiadané „vzal/a som si“: <b>${tk}</b>`, 'smeny.html']);
-    return out;
-  }
-  // najbližšie smeny prihláseného zamestnanca (max 5) – zavretý deň = potvrdená smena, otvorený = zatiaľ prihlásený
-  function myUpcoming() {
-    if (!me) return [];
-    const today = iso(new Date());
-    return Object.keys(upcoming || {}).filter(k => k >= today).sort().filter(k => { const d = upcoming[k] || {}; return !d.off && (Array.isArray(d.employees) ? d.employees : Object.values(d.employees || {})).includes(me); }).slice(0, 5);
-  }
-  let ui = { mgrForm: false, err: '', shopOpen: false, accOpen: false, handDraft: '' };
-
-  const allowed = key => isMgr || !me || ((access.e || {})[enc(me)] || {})[key] !== false;
-
-  // ---- 📲 pridať appku do mobilu (PWA) - presunuté zo Smien sem, appka sa inštaluje ako celok ----
-  let deferredPrompt = null;
-  const isStandalone = () => window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
-  const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-  const canInstall = () => !isStandalone() && (!!deferredPrompt || isIOS());
-  window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferredPrompt = e; render(); });
-  window.addEventListener('appinstalled', () => { deferredPrompt = null; toast('Aplikácia pridaná na plochu 🎉'); render(); });
-  async function doInstall() {
-    if (deferredPrompt) { deferredPrompt.prompt(); try { await deferredPrompt.userChoice; } catch (e) {} deferredPrompt = null; render(); return; }
-    alert('Na iPhone / iPade: v Safari ťukni na tlačidlo Zdieľať (štvorec so šípkou nahor) a vyber „Pridať na plochu“.');
-  }
-  const installTile = () => canInstall() ? `<button class="tile" style="border-left-color:var(--green);margin-top:10px" onclick="doInstall()"><span class="ic">📲</span><span class="tx"><b>Do mobilu</b><span>Pridať appku na plochu telefónu – otvára sa ako aplikácia</span></span><span class="arr">›</span></button>` : '';
-
-  // ---- prihlásenie zamestnanca (rovnaký kód ako v Smenách aj Objednávkach) ----
-  let fails = 0;
-  const blurNow = () => { try { document.activeElement && document.activeElement.blur(); } catch (e) {} };
-  function empLogin() {
-    ui.lName = $('lName').value; blurNow();   // inak by render() (guard na fokus) neukázal chybu
-    const lock = Number(ls.get('cp_lockuntil') || 0);
-    if (Date.now() < lock) { ui.err = `Príliš veľa pokusov. Skús to o ${Math.ceil((lock - Date.now()) / 1000)} s.`; return render(); }
-    const name = $('lName').value, code = $('lCode').value.trim();
-    const e = emps.find(x => x.name === name);
-    if (!e) { ui.err = 'Vyber svoje meno.'; return render(); }
-    if (String(e.code) !== code) {
-      if (++fails >= 5) { fails = 0; ls.set('cp_lockuntil', String(Date.now() + 60000)); ui.err = 'Príliš veľa pokusov. Skús to o minútu.'; }
-      else ui.err = 'Nesprávny kód.';
-      return render();
-    }
-    if (((access.e || {})[enc(name)] || {}).smeny === false && ((access.e || {})[enc(name)] || {}).objednavky === false) { ui.err = 'Nemáš prístup. Ozvi sa vedúcemu.'; return render(); }
-    fails = 0; ui.err = ''; me = name;
-    ls.set('cp_myname', name); ls.set('waiter', JSON.stringify(name));   // Smeny + Objednávky naraz
-    toast(`Vitaj, ${name.split(' ')[0]}!`); render();
-  }
-  async function mgrLogin() {
-    const pw = $('mPass').value; blurNow();
-    if (!pw) { ui.err = 'Zadaj heslo.'; return render(); }
-    try {
-      // LOCAL = prihlásenie vedúceho ostane aj po zavretí appky (SESSION odhlasovalo pri každom zavretí) – 2026-10-16
-      await firebase.auth().setPersistence(firebase.auth.Auth.Persistence.LOCAL);
-      await firebase.auth().signInWithEmailAndPassword(MANAGER_EMAIL, pw);
-      ui.err = ''; ui.mgrForm = false; toast('Prihlásený ako vedúci ⚡');
-    } catch (e) { ui.err = 'Nesprávne heslo.'; render(); }
-  }
-  async function logout() {
-    if (isMgrAuth) { try { await firebase.auth().signOut(); } catch (e) {} }   // zariadenie sa potom prihlási znova samo
-    me = ''; viewAs = ''; ls.del('cp_viewAs'); ls.del('cp_myname'); ls.set('waiter', JSON.stringify(''));
-    ui = { mgrForm: false, err: '', shopOpen: false, accOpen: false, handDraft: '' };
-    render();
-  }
-
-  // ---- nástenka "Dnes" ----
-  function todayTodos(key) {
-    const wd = new Date(key + 'T12:00:00').getDay(), dayStart = new Date(key + 'T00:00:00').getTime();
-    let total = 0, done = 0;
-    Object.values(todos || {}).forEach(t => {
-      if (!t || typeof t.text !== 'string') return;
-      if (t.recur !== undefined && t.recur !== null) {
-        if (Number(t.recur) !== wd) return;
-        total++; if (t.doneAt && t.doneAt >= dayStart) done++;
-      } else if (t.day) {
-        // dnešné + nesplnené z minulých dní (tie sa samy presúvajú ďalej)
-        if (t.day === key || (!t.done && t.day < key)) { total++; if (t.done) done++; }
-      }
-    });
-    return { total, done };
-  }
-  function todayReservations(key) {
-    const from = new Date(key + 'T00:00:00').getTime(), to = from + 30 * 3600e3;   // do 6:00 ďalšieho dňa
-    const q = Object.values(queue || {}).filter(r => r && (!r.reserveAt || (r.reserveAt >= from && r.reserveAt < to))).length;
-    return q + ((day && day.reservations) ? Object.keys(day.reservations).length : 0);
-  }
-  function latestNotice(key) {
-    return Object.values(notices || {}).filter(n => n && n.text && (!n.expires || n.expires >= key)).sort((a, b) => (b.ts || 0) - (a.ts || 0))[0];
-  }
-  const boardOpen = () => Object.entries(board || {}).map(([id, b]) => ({ id, ...b })).filter(b => b && typeof b.text === 'string' && !b.done).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
-
-  // ---- odovzdávka smeny (meta/handover) ----
-  async function sendHandover() {
-    const text = ($('hText').value || '').trim().slice(0, 600); blurNow();
-    if (!text) { toast('Napíš, čo má vedieť ďalšia smena.'); return; }
-    try { await firebase.database().ref('meta/handover').push({ text, author: isMgr && !me ? 'Vedúci' : me, t: Date.now() }); ui.handDraft = ''; toast('Odovzdávka uložená ✓'); render(); }
-    catch (e) { toast('Nepodarilo sa uložiť.'); }
-  }
-  async function markRead(id) {
-    if (!me) return;
-    try { await firebase.database().ref(`meta/handover/${id}/r/${enc(me)}`).set(Date.now()); } catch (e) { toast('Nepodarilo sa uložiť.'); }
-  }
-  async function delHandover(id) { if (isMgr && confirm('Zmazať túto odovzdávku?')) { try { await firebase.database().ref('meta/handover/' + id).remove(); } catch (e) {} } }
-
-  // ---- Chýba / Kúpiť priamo na úvode (rovnaký zoznam board/ ako v Smenách a Objednávkach) ----
-  const whoAmI = () => isMgr && !me ? 'Vedúci' : (me || 'Vedúci');
-  async function addBoard() {
-    const text = ($('bText').value || '').trim().slice(0, 120), qty = ($('bQty').value || '').trim().slice(0, 30); blurNow();
-    if (!text) { toast('Napíš, čo treba kúpiť.'); return; }
-    // (2026-10-16) "Chýba" a "Kúpiť" je to isté → všetko sa zapisuje ako Kúpiť (staré "missing" sa zobrazia rovnako)
-    const doc = { text, type: 'buy', author: whoAmI().slice(0, 60), createdAt: Date.now(), ...(qty ? { qty } : {}) };
-    try { await firebase.database().ref('board').push(doc); ui.bText = ''; ui.bQty = ''; toast('Pridané na nákup 🛒'); render(); }
-    catch (e) { toast('Nepodarilo sa uložiť.'); }
-  }
-  async function setBoardDone(id, val) {
-    try { await firebase.database().ref('board/' + id).update({ done: !!val, doneAt: val ? Date.now() : null }); }
-    catch (e) { toast('Nepodarilo sa uložiť.'); }
-  }
-  async function delBoard(id) {
-    if (!isMgr || !confirm('Zmazať túto položku?')) return;
-    try { await firebase.database().ref('board/' + id).remove(); } catch (e) { toast('Nepodarilo sa zmazať.'); }
-  }
-
-  // ---- nastavenie prístupov (len vedúci) ----
-  async function setAccess(name, key, on) {
-    if (!isMgr) return;
-    try { await firebase.database().ref(`settings/hubAccess/e/${enc(name)}/${key}`).set(on ? null : false); }
-    catch (e) { toast('Nepodarilo sa uložiť (len vedúci).'); }
-  }
-
-  // ---- vykreslenie ----
-  function render() {
-    // nerušiť písanie odovzdávky / prihlasovacích údajov pri živej zmene dát
-    const ae = document.activeElement && document.activeElement.id;
-    if (ae === 'hText' || ae === 'lCode' || ae === 'mPass' || ae === 'bText' || ae === 'bQty') return;
-    const app = $('app');
-    const logged = !!me || isMgr;
-    const head = `<div class="top"><div class="logo">CP</div><div class="brand"><b>CHILL POINT</b><small>Laser aréna Trnava</small></div>
-      ${logged ? `<div class="who"><b>${isMgr ? '⚡ Vedúci' : '👤 ' + esc(me)}</b>${isMgrAuth && viewAs
-        ? '<button onclick="backToMgr()">⚡ späť ako vedúci</button>'   // (2026-10-20) v režime 👁 len jedno tlačidlo – späť, nie odhlásenie
-        : '<button onclick="logout()">odhlásiť</button>'}</div>` : ''}</div>`;
-    if (!logged) {
-      app.innerHTML = head + `<h1>Prihlás sa</h1><div class="card">
-        ${ui.mgrForm ? `<input type="password" id="mPass" placeholder="Heslo vedúceho" autocomplete="current-password" onkeydown="if(event.key==='Enter')mgrLogin()">
-          <div class="err">${esc(ui.err)}</div><button class="btn" style="width:100%" onclick="mgrLogin()">Prihlásiť vedúceho</button>
-          <button class="link" onclick="ui.mgrForm=false;ui.err='';render()">‹ späť na zamestnanca</button>`
-        : `<select id="lName"><option value="">— vyber svoje meno —</option>${emps.map(e => `<option value="${esc(e.name)}" ${ui.lName === e.name ? 'selected' : ''}>${esc(e.name)}</option>`).join('')}</select>
-          <input id="lCode" inputmode="numeric" placeholder="Tvoj kód (rovnaký ako v Smenách)" autocomplete="off" onkeydown="if(event.key==='Enter')empLogin()">
-          <div class="err">${esc(ui.err)}</div><button class="btn" style="width:100%" onclick="empLogin()">Prihlásiť</button>
-          <button class="link" onclick="ui.mgrForm=true;ui.err='';render()">Prihlásiť ako vedúci</button>`}
-        </div>${installTile()}<footer>🏠 Úvod (index.html) · verzia 2026-10-20</footer>`;
-      return;
-    }
-    const bd = bizDate(), key = iso(bd), ppl = (day && !day.off ? (day.employees || []) : []).filter(Boolean);
-    const td = todayTodos(key), resN = todayReservations(key), miss = boardOpen(), notice = latestNotice(key);
-    // odovzdávky za posledné 3 dni, najnovšie hore
-    const hands = Object.entries(handover || {}).map(([id, h]) => ({ id, ...h })).filter(h => h && h.text && h.t > Date.now() - 3 * 864e5).sort((a, b) => b.t - a.t).slice(0, 5);
-    const cntStr = `${miss.length}`;
-    let html = head;
-    // vedúci, ktorý sa práve pozerá ako zamestnanec: lišta hore (prepnúť na iného / späť). Výber je v Nastaveniach dole.
-    if (isMgrAuth && viewAs) {
-      const opts = emps.map(e => `<option value="${esc(e.name)}" ${viewAs === e.name ? 'selected' : ''}>${esc(e.name)}</option>`).join('');
-      html += `<div class="card" style="border-color:var(--green);display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-            <span style="flex:1;min-width:150px">👁 Zobrazuješ ako <b>${esc(viewAs)}</b><br><small style="color:var(--muted)">Platí aj v Smenách a Objednávkach. Čo tu urobíš, je naozaj (zapíše sa).</small></span>
-            <select style="flex:1;min-width:140px;margin:0" onchange="viewAsEmp(this.value)">${opts}</select></div>`;
-    }
-    // 📋 Na vybavenie – všetko, čo čaká na vedúceho, na jednom mieste
-    if (isMgr) {
-      const items = todoItems();
-      html += `<div class="card" style="border-left:6px solid ${items.length ? 'var(--yellow)' : 'var(--green)'}">
-        <h3 style="margin:0 0 6px">📋 Na vybavenie</h3>
-        ${items.length ? items.map(([ic, txt, href]) => `<a href="${href}" style="display:flex;gap:10px;align-items:center;padding:8px 0;border-top:1px solid #26292d;color:inherit;text-decoration:none;font-size:15px"><span style="font-size:20px">${ic}</span><span style="flex:1">${txt}</span><span style="color:var(--yellow)">›</span></a>`).join('')
-          : '<div class="empty" style="margin:0">✓ Všetko vybavené 👍</div>'}</div>`;
-    }
-    // 📅 Moje najbližšie smeny (zamestnanec, aj vedúci v režime 👁)
-    if (me && !isMgr && allowed('smeny')) {
-      const mine = myUpcoming(), today = iso(new Date());
-      const tm = new Date(); tm.setDate(tm.getDate() + 1); const tomorrow = iso(tm);
-      html += `<a class="card" href="smeny.html" style="display:block;text-decoration:none;color:inherit;border-left:6px solid var(--yellow)">
-        <h3 style="margin:0 0 8px">📅 Moje najbližšie smeny</h3>
-        ${mine.length ? mine.map(k => { const dt = new Date(k + 'T12:00:00'), d = upcoming[k] || {};
-          const when = k === today ? '<b style="color:var(--yellow)">DNES</b>' : (k === tomorrow ? '<b style="color:var(--yellow)">ZAJTRA</b>' : '');
-          return `<div style="display:flex;justify-content:space-between;gap:8px;padding:5px 0;border-top:1px solid #26292d;font-size:15px">
-            <span>${DAY_NAMES[dt.getDay()]} ${dt.getDate()}. ${dt.getMonth() + 1}. ${when}</span>
-            <span style="color:${d.closed ? 'var(--green)' : 'var(--muted)'};font-size:13px">${d.closed ? '✓ potvrdená' : '⏳ prihlásený/á'}</span></div>`; }).join('')
-          : '<div class="empty" style="margin:0">Zatiaľ nemáš žiadnu smenu. Pozri kalendár v Smenách.</div>'}
-      </a>`;
-    }
-    html += `<div class="card today"><h3><span>📅 Dnes · ${DAY_NAMES[bd.getDay()]} ${bd.getDate()}. ${bd.getMonth() + 1}.</span>${day && day.off ? '<span style="color:var(--muted);font-size:12px">bez prevádzky</span>' : ''}</h3>
-      <div class="people">👥 ${ppl.length ? ppl.map(esc).join(', ') : '<span style="color:var(--muted)">nikto nie je prihlásený</span>'}</div>
-      <div class="stats">
-        <a class="stat" href="smeny.html#ulohy"><small>Úlohy</small><b>${td.done} / ${td.total}</b></a>
-        <a class="stat" href="objednavky.html#rezervacie"><small>Rezervácie</small><b>${resN}</b></a>
-        <button class="stat" onclick="ui.shopOpen=!ui.shopOpen;render();document.getElementById('shopTile').scrollIntoView({behavior:'smooth'})"><small>Kúpiť</small><b>${miss.length}</b></button>
+</main>
+<footer>
+  <div class="wrap">
+    <div class="cols">
+      <div>
+        <a class="logo" href="index.html"><img src="https://www.chillpoint.sk/wp-content/uploads/2026/05/chillpoint-logo-biele-122x41.webp" width="122" height="41" alt="Chillpoint"></a>
+        <p class="muted">Najväčšia laser aréna v Trnave. Otestujte všetky zmysly a zažite to na vlastnej koži.</p>
       </div>
-      ${day && day.note ? `<div class="note">📝 ${esc(day.note)}</div>` : ''}
-      ${notice ? `<div class="note">📣 ${esc(notice.text.length > 160 ? notice.text.slice(0, 160) + '…' : notice.text)}</div>` : ''}
-    </div>`;
-    if (allowed('odovzdavka')) {
-      html += `<div class="card hand"><h3><span>📝 Odovzdávka smeny</span></h3>
-        ${hands.length ? hands.map(h => { const reads = Object.keys(h.r || {}).map(k => { try { return decodeURIComponent(k); } catch (e) { return k; } });
-          const mine = me && reads.includes(me);
-          return `<div class="hitem"><p>${esc(h.text)}</p><div class="meta"><span>${esc(h.author || '')} · ${new Date(h.t).getDate()}. ${new Date(h.t).getMonth() + 1}. ${hhmm(h.t)}${isMgr ? ` · prečítali: ${reads.length ? esc(reads.join(', ')) : 'zatiaľ nikto'}` : ''}</span>
-            <span>${me && h.author !== me ? (mine ? '<span style="color:var(--green)">✓ prečítané</span>' : `<button class="btn sm" onclick="markRead('${h.id}')">✓ Prečítané</button>`) : ''}${isMgr ? ` <button class="btn sm ghost" onclick="delHandover('${h.id}')">🗑</button>` : ''}</span></div></div>`; }).join('')
-          : '<div class="empty">Zatiaľ žiadna odovzdávka za posledné 3 dni.</div>'}
-        <div style="margin-top:12px"><textarea id="hText" maxlength="600" placeholder="Čo má vedieť ďalšia smena? (napr. došiel ľad, zbraň č. 4 nefunguje…)" oninput="ui.handDraft=this.value">${esc(ui.handDraft)}</textarea>
-          <button class="btn sm" onclick="sendHandover()">Uložiť odovzdávku</button></div>
-      </div>`;
-    }
-    html += `<h2>Kam ideš?</h2><div class="tiles">`;
-    if (allowed('smeny')) html += `<a class="tile" href="smeny.html"><span class="ic">📅</span><span class="tx"><b>Smeny</b><span>Rozpis zmien, úlohy a navyše, vzal/a som si</span></span><span class="arr">›</span></a>`;
-    if (allowed('objednavky')) html += `<a class="tile" href="objednavky.html"><span class="ic">🍹</span><span class="tx"><b>Objednávky</b><span>Stoly, bar, atrakcie, platby a uzávierka</span></span><span class="arr">›</span></a>`;
-    if (allowed('kupit')) {
-      // otvorené položky s tlačidlom "✓ doplnené/kúpené", vybavené (7 dní) s "↺ vrátiť", vedúci môže mazať
-      // jeden zoznam "Kúpiť" (staré položky typu "chýba" sú v ňom tiež)
-      const row = b => `<div class="it" style="display:flex;align-items:center;gap:8px"><span style="flex:1;min-width:0">🛒 <b>${esc(b.text)}</b>${b.qty ? ' · ' + esc(b.qty) : ''} <small>${esc(b.author || '')}</small></span>
-        <button class="btn sm" onclick="setBoardDone('${b.id}',true)">✓ kúpené</button>${isMgr ? `<button class="btn sm ghost" onclick="delBoard('${b.id}')">🗑</button>` : ''}</div>`;
-      const doneRow = b => `<div class="it" style="display:flex;align-items:center;gap:8px;opacity:.55"><span style="flex:1;min-width:0"><s>🛒 ${esc(b.text)}${b.qty ? ' · ' + esc(b.qty) : ''}</s></span>
-        <button class="btn sm ghost" onclick="setBoardDone('${b.id}',false)">↺ vrátiť</button>${isMgr ? `<button class="btn sm ghost" onclick="delBoard('${b.id}')">🗑</button>` : ''}</div>`;
-      const doneList = Object.entries(board || {}).map(([id, b]) => ({ id, ...b })).filter(b => b && typeof b.text === 'string' && b.done && (b.doneAt || 0) > Date.now() - 7 * 864e5).sort((a, b) => (b.doneAt || 0) - (a.doneAt || 0));
-      html += `<div><button class="tile" id="shopTile" onclick="ui.shopOpen=!ui.shopOpen;render()"><span class="ic">🛒</span><span class="tx"><b>Čo treba kúpiť${miss.length ? `<span class="badge">${cntStr}</span>` : ''}</b><span>${miss.length ? `Kúpiť: ${miss.length}` : 'Netreba nič kúpiť 👍'}</span></span><span class="arr">${ui.shopOpen ? '▴' : '▾'}</span></button>
-        <div class="shop ${ui.shopOpen ? 'open' : ''}">
-          <div style="padding-top:12px">
-            <input id="bText" maxlength="120" placeholder="Čo treba kúpiť? (napr. ľad, citróny)" value="${esc(ui.bText || '')}" oninput="ui.bText=this.value" onkeydown="if(event.key==='Enter')addBoard()">
-            <div style="display:grid;grid-template-columns:1fr auto;gap:6px"><input id="bQty" maxlength="30" placeholder="Koľko (nepovinné)" value="${esc(ui.bQty || '')}" oninput="ui.bQty=this.value" onkeydown="if(event.key==='Enter')addBoard()" style="margin-bottom:0">
-              <button class="btn" onclick="addBoard()">Pridať</button></div>
-          </div>
-          <h5>🛒 KÚPIŤ</h5>${miss.length ? miss.map(row).join('') : '<div class="empty">Zatiaľ nič na kúpenie.</div>'}
-          ${doneList.length ? `<h5>✓ VYBAVENÉ (7 dní)</h5>${doneList.map(doneRow).join('')}` : ''}
-        </div></div>`;
-    }
-    html += `</div>` + installTile();
-    if (isMgr) {
-      // (2026-10-19) ⚙ Nastavenia len pre vedúceho – zbalené riadky, ktoré sa rozkliknú (ako v appke na zbrane)
-      const row = (key, ic, title, sub, body) => `<div class="card" style="padding:0;margin-bottom:8px">
-        <button class="tile" style="border-left-color:var(--muted);padding:12px 14px;margin:0" onclick="ui.setOpen=ui.setOpen==='${key}'?'':'${key}';render()"><span class="ic" style="font-size:22px">${ic}</span><span class="tx"><b style="font-size:15px">${title}</b><span>${sub}</span></span><span class="arr">${ui.setOpen === key ? '▴' : '▾'}</span></button>
-        ${ui.setOpen === key ? `<div style="padding:0 14px 14px">${body}</div>` : ''}</div>`;
-      const link = (href, ic, title, sub) => `<a class="tile" href="${href}" style="border-left-color:var(--muted);padding:12px 14px;margin-bottom:8px"><span class="ic" style="font-size:22px">${ic}</span><span class="tx"><b style="font-size:15px">${title}</b><span>${sub}</span></span><span class="arr">›</span></a>`;
-      html += `<h2>⚙ Nastavenia <small style="font-size:12px;color:var(--muted);font-weight:400">(vidí len vedúci)</small></h2>`
-        + row('view', '👁', 'Pozrieť appku ako zamestnanec', 'Uvidíš úvod, Smeny aj Objednávky presne ako on',
-          `<p class="empty" style="margin:0 0 8px">Vyber zamestnanca – bez jeho kódu. Späť sa dostaneš tlačidlom „⚡ Späť ako vedúci“. Čo v tomto režime urobíš, sa naozaj zapíše.</p>
-           <select style="margin:0" onchange="viewAsEmp(this.value)"><option value="">— vyber zamestnanca —</option>${emps.map(e => `<option value="${esc(e.name)}">${esc(e.name)}</option>`).join('')}</select>`)
-        + row('access', '🔐', 'Prístupy zamestnancov', 'Kto čo vidí na úvode a kam sa dostane',
-          `<p class="empty" style="margin:0 0 10px">Odškrtni, kam zamestnanec nemá mať prístup. Platí pre úvodnú stránku aj pre prihlásenie do Smien a Objednávok. Vedúci vidí vždy všetko.</p>
-          <table class="acc"><tr><th>Zamestnanec</th>${AREAS.map(a => `<th>${a[1]}</th>`).join('')}</tr>
-          ${emps.map(e => { const a = (access.e || {})[enc(e.name)] || {}; return `<tr><td>${esc(e.name)}</td>${AREAS.map(([k]) => `<td><input type="checkbox" ${a[k] === false ? '' : 'checked'} onchange="setAccess('${esc(e.name).replace(/'/g, "\\'")}','${k}',this.checked)"></td>`).join('')}</tr>`; }).join('')}</table>`)
-        + link('smeny.html#nastavenia', '📅', 'Nastavenia Smien', 'Prihlasovanie, Môžem/Nemôžem, limity, checklisty, funkcie')
-        + link('objednavky.html#nastavenia', '🍹', 'Nastavenia Objednávok', 'Stoly, menu, atrakcie, zamestnanci a zľavy, funkcie');
-    }
-    html += `<!-- pri nahrávaní na GitHub skontroluj: tento súbor = index.html (ÚVODNÁ stránka); Smeny = smeny.html -->
-      <footer>🏠 Úvod (index.html) · verzia 2026-10-20</footer>`;
-    app.innerHTML = html;
-  }
-
-  // ---- Firebase ----
-  try {
-    firebase.initializeApp({
-      apiKey: "AIzaSyB-2HeoePKrcsdawvI1LCOTQ6vWjibItpU",
-      authDomain: "chillpoint-smeny-350c4.firebaseapp.com",
-      databaseURL: "https://chillpoint-smeny-350c4-default-rtdb.europe-west1.firebasedatabase.app",
-      projectId: "chillpoint-smeny-350c4",
-      storageBucket: "chillpoint-smeny-350c4.firebasestorage.app",
-      messagingSenderId: "251580957782",
-      appId: "1:251580957782:web:801f838e4cd65abb4027f7"
-    });
-    const db = firebase.database();
-    const on = (path, set) => db.ref(path).on('value', s => { set(s.val()); render(); }, () => { set(null); render(); });
-    // verejne čitateľné (aj bez prihlásenia)
-    on('employees/list', v => { emps = (Array.isArray(v) ? v : Object.values(v || {})).filter(e => e && e.name).sort((a, b) => a.name.localeCompare(b.name, 'sk')); });
-    on('todos', v => { todos = v || {}; });
-    on('board', v => { board = v || {}; });
-    on('notices', v => { notices = v || {}; });
-    on('settings/hubAccess', v => { access = v || {}; });
-    // deň sa mení o 6:00 - pri zmene sa prepojí na nový deň
-    let dayKey = '';
-    const watchDay = () => { const k = iso(bizDate()); if (k === dayKey) return; if (dayKey) db.ref('schedule/days/' + dayKey).off(); dayKey = k; on('schedule/days/' + k, v => { day = v || {}; }); };
-    watchDay(); setInterval(() => { watchDay(); render(); }, 60000);
-    // (2026-10-19) 📅 Moje najbližšie smeny + 📋 Na vybavenie – dni od 60 dní dozadu (kvôli „vzal/a som si“) dopredu
-    const from = new Date(); from.setDate(from.getDate() - 60);
-    db.ref('schedule/days').orderByKey().startAt(iso(from)).limitToFirst(150)
-      .on('value', s => { upcoming = s.val() || {}; render(); }, () => { upcoming = {}; });
-    on('swaps', v => { swaps = v || {}; });
-    on('settings/min', v => { minCfg = v || {}; });
-    on('settings/weekdays', v => { weekCfg = v || {}; });
-    on('settings/features', v => { featCfg = v || {}; });
-    // rezervácie a odovzdávky potrebujú prihlásenie - ak nikto nie je prihlásený, prihlási sa zariadenie (ako v Objednávkach)
-    let authOn = false;
-    firebase.auth().onAuthStateChanged(async u => {
-      user = u; isMgrAuth = !!u && (u.email || '').toLowerCase() === MANAGER_EMAIL; authReady = true; applyView();
-      if (!u) { try { await firebase.auth().signInWithEmailAndPassword(DEVICE_EMAIL, DEVICE_PASSWORD); } catch (e) {} return; }
-      if (!authOn) { authOn = true; on('queue', v => { queue = v || {}; }); on('meta/handover', v => { handover = v || {}; }); }
-      render();
-    });
-  } catch (e) { $('app').innerHTML = '<p class="empty">Nepodarilo sa pripojiť. Skús obnoviť stránku.</p>'; }
-  render();
-  window.addEventListener('focusout', () => setTimeout(render, 50));   // dokresliť odložené zmeny po dopísaní
-  if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
-    window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => {}); });
-  }
-  </script>
+      <div>
+        <h4>Kontakt</h4>
+        <ul>
+          <li><a href="mailto:rezervacia@chillpoint.sk">rezervacia@chillpoint.sk</a></li>
+          <li><a href="tel:0910836876">0910 836 876</a></li>
+          <li><a href="https://maps.app.goo.gl/YeS8BFW4q3ne5B8j7">Suchovská cesta 12, 917 01 Trnava</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>Otváracie hodiny</h4>
+        <ul>
+          <li>Po–Št: 15:00–22:00</li><li>Piatok: 15:00–24:00</li>
+          <li>Sobota: 13:00–24:00</li><li>Nedeľa: 13:00–22:00</li>
+        </ul>
+      </div>
+      <div>
+        <h4>Dôležité odkazy</h4>
+        <ul>
+          <li><a href="https://www.chillpoint.sk/ochrana-sukromia/">Zásady ochrany osobných údajov</a></li>
+          <li><a href="https://www.chillpoint.sk/cookies/">Cookies</a></li>
+          <li><a href="admin.html">Prihlásenie (správa)</a></li>
+        </ul>
+      </div>
+    </div>
+    <p class="muted" style="font-size:.9rem">Chill Point s.r.o., 925 32 Veľká Mača 990 · IČO: 48 139 327 · DIČ: 2120058435<br>Copyright © 2026 Chillpoint všetky práva vyhradené</p>
+  </div>
+</footer>
+<script src="nav.js"></script>
+<script src="firebase-config.js"></script>
+<script src="content.js"></script>
 </body>
 </html>
