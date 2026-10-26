@@ -1,0 +1,161 @@
+/* Rezervácia laser game – všetky štýly pod #rz, farby cez premenné (nový dizajn ich len prepíše). */
+#rz {
+  --rz-bg: #1f1e25;
+  --rz-bg-2: #17161b;
+  --rz-line: #34323d;
+  --rz-ink: #f4f1ea;
+  --rz-muted: #a6a3ad;
+  --rz-accent: #efc74f;
+  --rz-accent-ink: #1a1a1a;
+  --rz-free: #2a2931;
+  --rz-busy: #e5484d;
+  --rz-busy-bg: rgba(229, 72, 77, .14);
+  --rz-ok: #46c66d;
+  max-width: 860px;
+  margin: 0 auto;
+  color: var(--rz-ink);
+}
+#rz *, #rz *::before, #rz *::after { box-sizing: border-box; }
+#rz h2 { margin: 0 0 6px; font-size: clamp(1.5rem, 4vw, 2rem); }
+#rz h3 { margin: 0 0 10px; font-size: 1.05rem; }
+#rz .rz-card { background: var(--rz-bg); border: 1px solid var(--rz-line); border-radius: 14px; padding: 28px; }
+#rz .rz-sub { margin: 0 0 22px; color: var(--rz-muted); }
+#rz .rz-hint { color: var(--rz-muted); margin: 8px 0; }
+
+/* kroky */
+#rz .rz-steps { display: flex; gap: 8px; list-style: none; margin: 0 0 26px; padding: 0; }
+#rz .rz-steps li { flex: 1; display: flex; align-items: center; gap: 8px; padding-bottom: 10px; border-bottom: 3px solid var(--rz-line); color: var(--rz-muted); font-size: .92rem; margin: 0; }
+#rz .rz-steps em { font-style: normal; display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: var(--rz-line); color: var(--rz-ink); font-weight: 700; font-size: .85rem; flex: none; }
+#rz .rz-steps li.current, #rz .rz-steps li.done { border-color: var(--rz-accent); }
+#rz .rz-steps li.current { color: var(--rz-ink); font-weight: 600; }
+#rz .rz-steps li.current em, #rz .rz-steps li.done em { background: var(--rz-accent); color: var(--rz-accent-ink); }
+
+/* tlačidlá */
+#rz button { font: inherit; cursor: pointer; }
+#rz button:disabled { cursor: not-allowed; }
+#rz button:focus-visible, #rz input:focus-visible, #rz a:focus-visible { outline: 3px solid var(--rz-accent); outline-offset: 2px; }
+#rz .rz-btn { background: var(--rz-accent); color: var(--rz-accent-ink); border: 2px solid var(--rz-accent); border-radius: 8px; padding: 13px 26px; font-weight: 700; }
+#rz .rz-btn:hover:not(:disabled) { filter: brightness(1.08); }
+#rz .rz-btn:disabled { opacity: .4; }
+#rz .rz-btn.ghost { background: transparent; color: var(--rz-ink); border-color: var(--rz-line); }
+#rz .rz-link { background: none; border: 0; padding: 4px; color: var(--rz-muted); text-decoration: underline; font-size: .9rem; }
+#rz .rz-nav { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 26px; flex-wrap: wrap; }
+
+/* počet hráčov */
+#rz .rz-stepper { display: inline-flex; align-items: center; border: 1px solid var(--rz-line); border-radius: 10px; overflow: hidden; }
+#rz .rz-stepper button { width: 60px; height: 60px; border: 0; background: var(--rz-free); color: var(--rz-ink); font-size: 1.7rem; }
+#rz .rz-stepper button:disabled { opacity: .3; }
+#rz .rz-stepper output { min-width: 80px; text-align: center; font-size: 1.8rem; font-weight: 800; }
+
+/* kalendár: 2 mesiace vedľa seba */
+#rz .rz-months { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px; }
+#rz .rz-month h3 { text-transform: capitalize; }
+#rz .rz-week, #rz .rz-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+#rz .rz-week span { text-align: center; font-size: .78rem; color: var(--rz-muted); padding-bottom: 4px; }
+#rz .rz-day { position: relative; aspect-ratio: 1; border: 1px solid var(--rz-line); border-radius: 8px; background: var(--rz-free); color: var(--rz-ink); font-weight: 600; font-size: .95rem; padding: 0; }
+#rz .rz-day.empty { border: 0; background: none; }
+#rz .rz-day:hover:not(:disabled) { border-color: var(--rz-accent); }
+#rz .rz-day.today { box-shadow: inset 0 0 0 1px var(--rz-muted); }
+#rz .rz-day.active { background: var(--rz-accent); color: var(--rz-accent-ink); border-color: var(--rz-accent); }
+#rz .rz-day.past, #rz .rz-day.closed { background: transparent; color: #5d5a66; border-color: transparent; }
+#rz .rz-day.full { background: var(--rz-busy-bg); color: var(--rz-busy); border-color: transparent; text-decoration: line-through; }
+#rz .rz-day i { position: absolute; top: 2px; right: 3px; min-width: 16px; height: 16px; border-radius: 8px; background: var(--rz-ok); color: #0d1a10; font: 700 .68rem/16px system-ui, sans-serif; font-style: normal; text-align: center; padding: 0 3px; }
+#rz .rz-day.active i { background: var(--rz-accent-ink); color: var(--rz-accent); }
+
+/* časy */
+#rz .rz-times { margin-top: 26px; padding-top: 22px; border-top: 1px solid var(--rz-line); scroll-margin-top: 90px; }
+#rz .rz-dayname { scroll-margin-top: 90px; }
+#rz .rz-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 0 0 14px; font-size: .82rem; color: var(--rz-muted); }
+#rz .rz-legend span::before { content: ""; display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+#rz .rz-legend .free::before { background: var(--rz-free); border: 1px solid var(--rz-line); }
+#rz .rz-legend .picked::before { background: var(--rz-accent); }
+#rz .rz-legend .busy::before { background: var(--rz-busy-bg); border: 1px solid var(--rz-busy); }
+#rz .rz-slots { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 8px; }
+#rz .rz-slot { display: flex; flex-direction: column; align-items: center; justify-content: center; aspect-ratio: 1.25; border: 1px solid var(--rz-line); border-radius: 10px; background: var(--rz-free); color: var(--rz-ink); line-height: 1.2; transition: transform .1s, border-color .1s; }
+#rz .rz-slot b { font-size: 1.12rem; }
+#rz .rz-slot small { font-size: .72rem; color: var(--rz-muted); }
+#rz .rz-slot.free:hover { border-color: var(--rz-accent); transform: translateY(-1px); }
+#rz .rz-slot.picked { background: var(--rz-accent); border-color: var(--rz-accent); color: var(--rz-accent-ink); }
+#rz .rz-slot.picked small { color: var(--rz-accent-ink); }
+#rz .rz-slot.busy, #rz .rz-slot.rest { background: var(--rz-busy-bg); border-color: var(--rz-busy); color: var(--rz-busy); }
+#rz .rz-slot.busy small, #rz .rz-slot.rest small { color: var(--rz-busy); }
+#rz .rz-slot.busy b { text-decoration: line-through; }
+
+/* vybrané hry */
+#rz .rz-picked { margin-top: 24px; padding: 16px 18px; border-radius: 12px; background: var(--rz-bg-2); border: 1px solid var(--rz-line); }
+#rz .rz-picked ul { list-style: none; margin: 0; padding: 0; }
+#rz .rz-picked li { display: flex; justify-content: space-between; align-items: center; padding: 7px 0; border-top: 1px solid var(--rz-line); margin: 0; }
+#rz .rz-picked li:first-child { border-top: 0; }
+
+/* formulár */
+#rz .rz-summary { list-style: none; margin: 14px 0 0; padding: 0; border: 1px solid var(--rz-line); border-radius: 12px; }
+#rz .rz-summary li { display: flex; justify-content: space-between; gap: 16px; padding: 11px 16px; border-top: 1px solid var(--rz-line); margin: 0; }
+#rz .rz-summary li:first-child { border-top: 0; }
+#rz .rz-summary span { color: var(--rz-muted); }
+#rz .rz-summary b { text-align: right; }
+#rz .rz-form { margin-top: 20px; }
+#rz .rz-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+#rz .rz-form label { display: flex; flex-direction: column; gap: 5px; font-weight: 600; font-size: .92rem; margin-bottom: 14px; }
+#rz .rz-form input:not([type="checkbox"]) { font: inherit; font-weight: 400; padding: 12px 13px; border: 1px solid var(--rz-line); border-radius: 8px; background: var(--rz-bg-2); color: var(--rz-ink); width: 100%; }
+#rz .rz-form label.rz-check { flex-direction: row; align-items: flex-start; gap: 10px; font-weight: 400; }
+#rz .rz-check input { width: 20px; height: 20px; margin: 2px 0 0; flex: none; accent-color: var(--rz-accent); }
+#rz .rz-check a { color: var(--rz-ink); }
+
+#rz .rz-status { margin: 12px 0 0; }
+#rz .rz-status:empty { margin: 0; }
+#rz .rz-status.err { color: var(--rz-busy); font-weight: 600; }
+#rz .rz-status.warn { padding: 10px 14px; border-radius: 10px; background: var(--rz-busy-bg); color: var(--rz-busy); }
+#rz .rz-test { margin: 0 0 12px; padding: 10px 14px; border-radius: 10px; background: rgba(239, 199, 79, .12); border: 1px dashed var(--rz-accent); font-size: .9rem; color: var(--rz-ink); }
+
+/* hotovo */
+#rz .rz-done { text-align: center; padding: 16px 0; }
+#rz .rz-done-icon { width: 68px; height: 68px; margin: 0 auto 14px; border-radius: 50%; background: var(--rz-accent); color: var(--rz-accent-ink); display: grid; place-items: center; font-size: 2.1rem; font-weight: 800; }
+#rz .rz-done ul { list-style: none; padding: 0; margin: 14px 0; font-weight: 700; font-size: 1.1rem; }
+#rz .rz-done li { margin: 0 0 4px; }
+
+@media (max-width: 680px) {
+  #rz .rz-card { padding: 20px 14px; border-radius: 12px; }
+  #rz .rz-months { grid-template-columns: 1fr; gap: 22px; }
+  #rz .rz-steps span { display: none; }
+  #rz .rz-steps li.current span { display: inline; }
+  #rz .rz-row { grid-template-columns: 1fr; gap: 0; }
+  #rz .rz-slots { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+  #rz .rz-slot b { font-size: 1rem; }
+  #rz .rz-nav .rz-btn { flex: 1; }
+}
+
+/* ---- WordPress: téma (napr. Astra) štýluje všetky tlačidlá a polia – tu ich vrátime do pôvodného stavu ---- */
+#rz button, #rz input { text-transform: none; letter-spacing: normal; box-shadow: none; line-height: 1.2; min-height: 0; }
+#rz p { margin-top: 0; }
+#rz ul { margin-left: 0; }
+
+/* ---- Svetlý vzhľad (Nastavenia → Chillpoint rezervácie → Vzhľad) ---- */
+#rz.rz-light {
+  --rz-bg: #ffffff;
+  --rz-bg-2: #f6f6f8;
+  --rz-line: #e2e2e8;
+  --rz-ink: #1b1b1b;
+  --rz-muted: #6b6b78;
+  --rz-free: #f3f3f6;
+  --rz-busy: #d33a3f;
+  --rz-busy-bg: #fdecec;
+  --rz-ok: #1f8a4c;
+}
+#rz.rz-light .rz-card { box-shadow: 0 10px 40px rgba(0, 0, 0, .07); }
+#rz.rz-light .rz-day.past, #rz.rz-light .rz-day.closed { color: #b9b9c3; }
+#rz.rz-light .rz-day i { color: #fff; }
+#rz.rz-light .rz-test { color: var(--rz-ink); }
+
+/* ---- Bez nastaveného Firebase ---- */
+.cpr-off { max-width: 760px; margin: 0 auto; padding: 18px 20px; border-radius: 12px; border: 1px dashed #efc74f; background: rgba(239, 199, 79, .1); }
+.cpr-off p { margin: 0; }
+/* ---- Ponuka 3+1 ---- */
+#rz .rz-offer { margin: 12px 0 0; padding: 10px 14px; border-radius: 10px; background: rgba(239, 199, 79, .14); border-left: 4px solid var(--rz-accent); color: var(--rz-ink); font-weight: 600; }
+#rz .rz-free { font-style: normal; font-size: .78rem; font-weight: 700; padding: 2px 8px; margin-left: 6px; border-radius: 20px; background: var(--rz-accent); color: var(--rz-accent-ink); }
+#rz .rz-modal { position: fixed; inset: 0; z-index: 99999; display: grid; place-items: center; padding: 16px; background: rgba(0, 0, 0, .6); }
+#rz .rz-modal-box { width: 100%; max-width: 440px; background: var(--rz-bg); color: var(--rz-ink); border: 1px solid var(--rz-accent); border-radius: 16px; padding: 26px 22px 20px; text-align: center; box-shadow: 0 20px 60px rgba(0, 0, 0, .4); }
+#rz .rz-modal-icon { font-size: 2.6rem; line-height: 1; margin-bottom: 8px; }
+#rz .rz-modal-box h3 { font-size: 1.35rem; margin: 0 0 8px; }
+#rz .rz-modal-box p { color: var(--rz-muted); margin: 0; }
+#rz .rz-modal-box p b { color: var(--rz-ink); }
+#rz .rz-modal-box .rz-nav { margin-top: 20px; justify-content: center; }
