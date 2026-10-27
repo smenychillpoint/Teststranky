@@ -220,16 +220,19 @@
   const B = Object.assign({
     hours: {}, daysOff: [], step: 20, game: 15, change: 5, rest: 40,
     minPlayers: 2, maxPlayers: 16, maxGames: 8, leadMinutes: 15,
-    offer: { minPlayers: 8, paid: 3, free: 1 },   // ponuka 3+1; false = vypnutá
+    offers: [{ minPlayers: 8, paid: 3, free: 1 }],   // ponuky (3+1 a ďalšie); prázdne = žiadna
+    offerStep: "off",                                 // výber ponuky zákazníkom: "off" | "before" / "after" (pred / po počte hráčov)
     phone: "", privacyUrl: "#", emailToCustomer: false
   }, CFG.booking || {});
   let BLOCK = B.game + B.change;            // na koľko minút hra zablokuje arénu pre iné partie
 
-  /* Nastavenia, ktoré vedúci mení v internej appke (laser/<env>/config vo Firebase), prepíšu tie z WordPressu. */
-  const REMOTE_KEYS = ["hours", "daysOff", "step", "game", "change", "rest", "minPlayers", "maxPlayers", "maxGames", "leadMinutes", "offer"];
+  /* Nastavenia, ktoré vedúci mení v internej appke (laser/<env>/config vo Firebase), prepíšu tie z WordPressu.
+     „offers“ = zoznam ponúk (od 2026-10-27); staršie „offer“ (jedna ponuka) sa ešte číta, ak „offers“ chýba. */
+  const REMOTE_KEYS = ["hours", "daysOff", "step", "game", "change", "rest", "minPlayers", "maxPlayers", "maxGames", "leadMinutes", "offer", "offers", "offerStep"];
   function applyRemoteConfig(c) {
     if (!c || typeof c !== "object") return;
     REMOTE_KEYS.forEach(k => { if (c[k] !== undefined && c[k] !== null) B[k] = c[k]; });
+    if (c.offers === undefined || c.offers === null) { if (c.offer !== undefined && c.offer !== null) B.offers = c.offer ? [c.offer] : []; }
     if (!Array.isArray(B.daysOff)) B.daysOff = Object.values(B.daysOff || {});
     BLOCK = B.game + B.change;
   }
@@ -333,6 +336,7 @@
     error: "",
     sending: false,
     done: null,
+    offerPick: null,             // výber ponuky zákazníkom (ak je zapnutý): "none" | "3+1"…
     offerModal: null,            // deň, pre ktorý ukazujeme okno „vyberte si 4. hru zadarmo“
     offerShown: new Set()        // dni, pre ktoré sme okno už ukázali (neotravovať opakovane)
   };
@@ -387,67 +391,94 @@
   const freeCount = date => timesFor(date).filter(t => !takenByOthers(date, t)).length;
   const sortedItems = () => [...state.selected.values()].sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
 
-  /* ============ PONUKA 3+1 ============ */
-  /* Partia aspoň 8 hráčov, ktorá si v jeden deň vyberie 3 hry, dostane 4. hru zadarmo. */
-  const offerOn = () => !!(B.offer && B.offer.minPlayers && B.offer.paid);
-  const bundle = () => B.offer.paid + (B.offer.free || 1);
-  const offerEnough = () => offerOn() && state.players >= B.offer.minPlayers;
+  /* ============ PONUKY (3+1 a ďalšie) ============ */
+  /* Ponuka = {minPlayers, paid, free}: partia aspoň minPlayers hráčov, ktorá si v jeden deň vyberie paid hier,
+     dostane ďalších free hier zadarmo (v každom bloku paid+free). Platí najvýhodnejšia ponuka pre počet hráčov. */
+  function offersList() {
+    const raw = B.offers === "" || B.offers === false ? [] : (Array.isArray(B.offers) ? B.offers : (B.offers && typeof B.offers === "object" ? Object.values(B.offers) : []));
+    return raw.filter(o => o && +o.minPlayers >= 1 && +o.paid >= 1)
+      .map(o => ({ minPlayers: +o.minPlayers, paid: +o.paid, free: Math.max(1, +o.free || 1) }))
+      .sort((a, b) => a.minPlayers - b.minPlayers || a.paid - b.paid);
+  }
+  const offerOn = () => offersList().length > 0;
+  const bundleOf = o => o.paid + o.free;
+  const rate = o => o.free / bundleOf(o);
+  /* ponuka, ktorú partia s n hráčmi má (najvýhodnejšia z tých, na ktoré má dosť ľudí) */
+  const bestFor = n => offersList().filter(o => n >= o.minPlayers).sort((a, b) => rate(b) - rate(a) || a.paid - b.paid)[0] || null;
+  const offerName = o => o.paid + "+" + o.free;
+  /* Výber ponuky zákazníkom (zapína vedúci v appke): state.offerPick = null (ešte nevybral) | "none" | "3+1"… */
+  const offerStepOn = () => offerOn() && (B.offerStep === "before" || B.offerStep === "after");
+  const pickedOffer = () => offersList().find(o => offerName(o) === state.offerPick) || null;
+  const cur = () => {
+    if (!offerStepOn()) return bestFor(state.players);
+    const p = pickedOffer();
+    return p && state.players >= p.minPlayers ? p : null;
+  };
+  /* najbližšia ponuka, na ktorú partii chýbajú ľudia (a ktorá by bola výhodnejšia ako tá, čo majú) */
+  const nextOffer = () => {
+    if (offerStepOn()) { const p = pickedOffer(); return p && state.players < p.minPlayers ? p : null; }
+    const c = cur(); return offersList().filter(o => o.minPlayers > state.players && (!c || rate(o) > rate(c))).sort((a, b) => a.minPlayers - b.minPlayers)[0] || null;
+  };
+  const offerText = o => `${o.paid} ${o.paid === 1 ? "hra" : o.paid < 5 ? "hry" : "hier"} + ${o.free} zadarmo, od ${o.minPlayers} hráčov`;
+  const freeWord = o => o.free === 1 ? `${bundleOf(o)}. hru` : `${games(o.free)}`;
   function gamesPerDay() {
     const m = {};
     for (const it of state.selected.values()) m[it.date] = (m[it.date] || 0) + 1;
     return m;
   }
-  /* Ktoré vybrané hry sú zadarmo: v každom dni každá štvrtá (pri 3+1). */
+  /* Ktoré vybrané hry sú zadarmo: v každom dni v každom bloku (paid + free) posledných free hier. */
   function freeKeys() {
-    const out = new Set();
-    if (!offerEnough()) return out;
+    const out = new Set(), o = cur();
+    if (!o) return out;
     const byDay = {};
     sortedItems().forEach(it => { (byDay[it.date] = byDay[it.date] || []).push(it); });
-    Object.values(byDay).forEach(list => list.forEach((it, i) => { if ((i + 1) % bundle() === 0) out.add(it.date + " " + it.time); }));
+    Object.values(byDay).forEach(list => list.forEach((it, i) => { if (i % bundleOf(o) >= o.paid) out.add(it.date + " " + it.time); }));
     return out;
   }
   const friends = n => n + (n === 1 ? " kamaráta" : " kamarátov");
-  const offerName = () => B.offer.paid + "+" + (B.offer.free || 1);
 
   function offerHints() {
     if (!offerOn()) return "";
-    const counts = gamesPerDay(), days = Object.keys(counts).sort(), out = [];
-    if (offerEnough()) {
-      days.filter(d => counts[d] >= bundle()).forEach(d => out.push(`🎁 ${dayLabel(d)}: ${bundle()}. hra je od nás zadarmo (ponuka ${offerName()}).`));
-      days.filter(d => counts[d] % bundle() === B.offer.paid).forEach(d =>
-        out.push(`🎁 ${dayLabel(d)}: vyberte si ešte jednu hru, máte ju od nás zadarmo (ponuka ${offerName()}).`));
-    } else if (days.some(d => counts[d] >= B.offer.paid)) {
-      const miss = B.offer.minPlayers - state.players;
-      out.push(`🎁 Zavolajte ešte ${friends(miss)} (spolu aspoň ${B.offer.minPlayers} hráčov) na všetky ${B.offer.paid} hry a ${bundle()}. hru máte zadarmo (ponuka ${offerName()}).`);
+    const counts = gamesPerDay(), days = Object.keys(counts).sort(), out = [], o = cur(), n = nextOffer();
+    if (o) {
+      days.forEach(d => {
+        const full = Math.floor(counts[d] / bundleOf(o)) * o.free + Math.max(0, counts[d] % bundleOf(o) - o.paid);
+        const left = counts[d] % bundleOf(o) >= o.paid ? bundleOf(o) - counts[d] % bundleOf(o) : 0;
+        if (full) out.push(`🎁 ${dayLabel(d)}: ${games(full)} od nás zadarmo (ponuka ${offerName(o)}).`);
+        if (left) out.push(`🎁 ${dayLabel(d)}: vyberte si ešte ${games(left)}, ${left === 1 ? "máte ju" : "máte ich"} od nás zadarmo (ponuka ${offerName(o)}).`);
+      });
+    }
+    if (n && days.some(d => counts[d] >= n.paid)) {
+      out.push(`🎁 Zavolajte ešte ${friends(n.minPlayers - state.players)} (spolu aspoň ${n.minPlayers} hráčov) a pri ${games(n.paid)} máte ${freeWord(n)} zadarmo (ponuka ${offerName(n)}).`);
     }
     return out.map(t => `<p class="rz-offer">${t}</p>`).join("");
   }
 
-  /* Deň, kde má partia presne toľko hier, že by ďalšia bola zadarmo (napr. 3 pri 3+1). */
-  function offerDay() {
-    if (!offerOn()) return null;
+  /* Deň, kde má partia presne toľko hier, že by ďalšie boli zadarmo (napr. 3 pri 3+1). */
+  function offerDay(o) {
+    if (!o) return null;
     const counts = gamesPerDay();
-    return Object.keys(counts).sort().find(d => counts[d] % bundle() === B.offer.paid) || null;
+    return Object.keys(counts).sort().find(d => counts[d] % bundleOf(o) === o.paid) || null;
   }
 
-  /* Okno s ponukou: "pick" = po výbere 3. hry, "continue" = pri Pokračovať, "friends" = málo hráčov. */
+  /* Okno s ponukou: "pick" = po výbere platených hier, "continue" = pri Pokračovať, "friends" = málo hráčov. */
   function offerModal() {
     const m = state.offerModal;
-    if (!m) return "";
-    const friendsCase = m.kind === "friends";
-    const miss = B.offer.minPlayers - state.players;
+    if (!m || !m.o) return "";
+    const o = m.o, friendsCase = m.kind === "friends";
+    const miss = o.minPlayers - state.players;
     const text = friendsCase
-      ? `Na ${dayLabel(m.date)} máte vybrané ${games(B.offer.paid)}. Zavolajte ešte <b>${friends(miss)}</b> (spolu aspoň ${B.offer.minPlayers} hráčov) a ${bundle()}. hru máte od nás <b>zadarmo</b> (ponuka ${offerName()}).`
-      : `Ste partia aspoň ${B.offer.minPlayers} hráčov a na ${dayLabel(m.date)} máte vybrané ${games(B.offer.paid)}. Vyberte si ešte jednu hru, tú máte od nás <b>zadarmo</b> (ponuka ${offerName()}).`;
+      ? `Na ${dayLabel(m.date)} máte vybrané ${games(o.paid)}. Zavolajte ešte <b>${friends(miss)}</b> (spolu aspoň ${o.minPlayers} hráčov) a ${freeWord(o)} máte od nás <b>zadarmo</b> (ponuka ${offerName(o)}).`
+      : `Ste partia aspoň ${o.minPlayers} hráčov a na ${dayLabel(m.date)} máte vybrané ${games(o.paid)}. Vyberte si ešte ${o.free === 1 ? "jednu hru, tú" : games(o.free) + ", tie"} máte od nás <b>zadarmo</b> (ponuka ${offerName(o)}).`;
     const noLabel = m.kind === "pick" ? "Nie, ďakujem" : "Pokračovať bez ponuky";
     const yes = friendsCase
       ? `<button type="button" class="rz-btn" data-act="offer-players">Zmeniť počet hráčov</button>`
-      : `<button type="button" class="rz-btn" data-act="offer-yes">Vybrať ${bundle()}. hru</button>`;
+      : `<button type="button" class="rz-btn" data-act="offer-yes">Vybrať ${o.free === 1 ? bundleOf(o) + ". hru" : "hry zadarmo"}</button>`;
     return `
       <div class="rz-modal" role="dialog" aria-modal="true" aria-labelledby="rz-offer-title">
         <div class="rz-modal-box">
           <div class="rz-modal-icon" aria-hidden="true">🎁</div>
-          <h3 id="rz-offer-title">${friendsCase ? `${bundle()}. hra môže byť zadarmo!` : `Máte ${bundle()}. hru zadarmo!`}</h3>
+          <h3 id="rz-offer-title">${friendsCase ? `${o.free === 1 ? bundleOf(o) + ". hra môže byť" : games(o.free) + " môžu byť"} zadarmo!` : `Máte ${freeWord(o)} zadarmo!`}</h3>
           <p>${text}</p>
           <div class="rz-nav"><button type="button" class="rz-btn ghost" data-act="offer-no">${noLabel}</button>${yes}</div>
         </div>
@@ -507,15 +538,30 @@
     }).join("") + "</ol>";
   }
 
-  function viewPlayers() {
+  /* Výber ponuky (pred alebo po počte hráčov – podľa nastavenia v appke). */
+  function viewOfferPick() {
+    if (!offerStepOn()) return "";
+    const p = pickedOffer();
+    const opt = (val, title, sub) => `<button type="button" class="rz-slot ${state.offerPick === val ? "picked" : "free"}" data-act="pick" data-pick="${esc(val)}" aria-pressed="${state.offerPick === val}" style="text-align:left;padding:12px 14px"><b>${esc(title)}</b><small>${esc(sub)}</small></button>`;
     return `
+      <h2>Akú ponuku si vyberiete?</h2>
+      <div class="rz-slots" style="grid-template-columns:repeat(auto-fill,minmax(200px,1fr))">
+        ${offersList().map(o => opt(offerName(o), "🎁 Ponuka " + offerName(o), offerText(o))).join("")}
+        ${opt("none", "🔫 Len laser game", "bez ponuky")}
+      </div>
+      ${p && state.players < p.minPlayers ? `<p class="rz-offer">Ponuka ${offerName(p)} platí od ${p.minPlayers} hráčov – zatiaľ máte ${state.players}.</p>` : ""}`;
+  }
+  function viewPlayers() {
+    const stepper = `
       <h2>Koľko vás bude?</h2>
       <p class="rz-sub">Počet hráčov vrátane vás (${B.minPlayers}–${B.maxPlayers}).</p>
       <div class="rz-stepper">
         <button type="button" data-act="minus" aria-label="Menej hráčov"${state.players <= B.minPlayers ? " disabled" : ""}>−</button>
         <output aria-live="polite">${state.players}</output>
         <button type="button" data-act="plus" aria-label="Viac hráčov"${state.players >= B.maxPlayers ? " disabled" : ""}>+</button>
-      </div>
+      </div>`;
+    return (B.offerStep === "before" ? viewOfferPick() + stepper : stepper + viewOfferPick()) + `
+      ${state.notice ? `<p class="rz-status warn" role="status">${esc(state.notice)}</p>` : ""}
       <div class="rz-nav"><span></span><button type="button" class="rz-btn" data-act="to2">Pokračovať</button></div>`;
   }
 
@@ -590,8 +636,9 @@
       <h2>Vaše údaje</h2>
       <ul class="rz-summary">
         <li><span>Počet hráčov</span><b>${state.players}</b></li>
+        ${offerStepOn() && state.offerPick ? `<li><span>Vybraná ponuka</span><b>${state.offerPick === "none" ? "len laser game" : "🎁 " + esc(state.offerPick)}</b></li>` : ""}
         <li><span>${items.length > 1 ? "Hry" : "Hra"}</span><b>${items.map(it => itemLabel(it) + (freeKeys().has(it.date + " " + it.time) ? " (zadarmo)" : "")).join("<br>")}</b></li>
-        ${freeKeys().size ? `<li><span>Ponuka ${offerName()}</span><b>${games(freeKeys().size)} zadarmo</b></li>` : ""}
+        ${freeKeys().size ? `<li><span>Ponuka ${offerName(cur())}</span><b>${games(freeKeys().size)} zadarmo</b></li>` : ""}
         <li><span>Platba</span><b>na mieste</b></li>
       </ul>
       ${offerHints()}
@@ -661,12 +708,16 @@
     if (act === "minus" || act === "plus") {
       state.players = Math.min(B.maxPlayers, Math.max(B.minPlayers, state.players + (act === "plus" ? 1 : -1)));
       render();
-    } else if (act === "to1") goStep(1);
-    else if (act === "to2") goStep(2);
+    } else if (act === "pick") { state.offerPick = b.dataset.pick; state.notice = ""; render(); }
+    else if (act === "to1") goStep(1);
+    else if (act === "to2") {
+      if (state.step === 1 && offerStepOn() && state.offerPick === null) { state.notice = "Vyberte si ponuku (alebo „Len laser game“)."; render(); return; }
+      goStep(2);
+    }
     else if (act === "to3") {
-      // Pri Pokračovať pripomenúť ponuku 3+1, ak má partia v niektorý deň 3 hry
-      const day = offerDay();
-      if (day) { state.offerModal = { date: day, kind: offerEnough() ? "continue" : "friends" }; render(); }
+      // Pri Pokračovať pripomenúť ponuku (ktorú majú, alebo na ktorú im chýbajú ľudia)
+      const o = cur(), n = nextOffer(), day = offerDay(o) || offerDay(n);
+      if (day) { state.offerModal = offerDay(o) ? { date: day, kind: "continue", o } : { date: day, kind: "friends", o: n }; render(); }
       else goStep(3);
     }
     else if (act === "day") {
@@ -684,9 +735,10 @@
       else {
         state.selected.set(key, { date, time });
         // 3 hry v jeden deň a aspoň 8 hráčov → ponúknuť 4. hru zadarmo (raz pre daný deň)
-        if (offerEnough() && gamesPerDay()[date] === B.offer.paid && !state.offerShown.has(date)) {
+        const o = cur();
+        if (o && gamesPerDay()[date] % bundleOf(o) === o.paid && !state.offerShown.has(date)) {
           state.offerShown.add(date);
-          state.offerModal = { date, kind: "pick" };
+          state.offerModal = { date, kind: "pick", o };
         }
       }
       focusKey = key;
@@ -752,6 +804,7 @@
     const gamesMap = {};
     items.forEach(it => { gamesMap[it.date + "_" + it.time.replace(":", "")] = true; });
     const data = { name: c.name, phone: c.phone, email: c.email, players: state.players, games: gamesMap, consent: true };
+    if (offerStepOn() && state.offerPick) data.offerPick = state.offerPick;   // čo si zákazník vybral (appka to ukáže)
 
     state.sending = true; btn.disabled = true; say("Odosielam rezerváciu…");
     try {
