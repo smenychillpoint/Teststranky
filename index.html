@@ -167,6 +167,16 @@
 /* ---- Bez nastaveného Firebase ---- */
 .cpr-off { max-width: 760px; margin: 0 auto; padding: 18px 20px; border-radius: 12px; border: 1px dashed #efc74f; background: rgba(239, 199, 79, .1); }
 .cpr-off p { margin: 0; }
+/* ---- Ponuka 3+1 ---- */
+#rz .rz-offer { margin: 12px 0 0; padding: 10px 14px; border-radius: 10px; background: rgba(239, 199, 79, .14); border-left: 4px solid var(--rz-accent); color: var(--rz-ink); font-weight: 600; }
+#rz .rz-free { font-style: normal; font-size: .78rem; font-weight: 700; padding: 2px 8px; margin-left: 6px; border-radius: 20px; background: var(--rz-accent); color: var(--rz-accent-ink); }
+#rz .rz-modal { position: fixed; inset: 0; z-index: 99999; display: grid; place-items: center; padding: 16px; background: rgba(0, 0, 0, .6); }
+#rz .rz-modal-box { width: 100%; max-width: 440px; background: var(--rz-bg); color: var(--rz-ink); border: 1px solid var(--rz-accent); border-radius: 16px; padding: 26px 22px 20px; text-align: center; box-shadow: 0 20px 60px rgba(0, 0, 0, .4); }
+#rz .rz-modal-icon { font-size: 2.6rem; line-height: 1; margin-bottom: 8px; }
+#rz .rz-modal-box h3 { font-size: 1.35rem; margin: 0 0 8px; }
+#rz .rz-modal-box p { color: var(--rz-muted); margin: 0; }
+#rz .rz-modal-box p b { color: var(--rz-ink); }
+#rz .rz-modal-box .rz-nav { margin-top: 20px; justify-content: center; }
   </style>
 </head>
 <body>
@@ -208,9 +218,19 @@
   const B = Object.assign({
     hours: {}, daysOff: [], step: 20, game: 15, change: 5, rest: 40,
     minPlayers: 2, maxPlayers: 16, maxGames: 8, leadMinutes: 15,
+    offer: { minPlayers: 8, paid: 3, free: 1 },   // ponuka 3+1; false = vypnutá
     phone: "", privacyUrl: "#", emailToCustomer: false
   }, CFG.booking || {});
-  const BLOCK = B.game + B.change;          // na koľko minút hra zablokuje arénu pre iné partie
+  let BLOCK = B.game + B.change;            // na koľko minút hra zablokuje arénu pre iné partie
+
+  /* Nastavenia, ktoré vedúci mení v internej appke (laser/<env>/config vo Firebase), prepíšu tie z WordPressu. */
+  const REMOTE_KEYS = ["hours", "daysOff", "step", "game", "change", "rest", "minPlayers", "maxPlayers", "maxGames", "leadMinutes", "offer"];
+  function applyRemoteConfig(c) {
+    if (!c || typeof c !== "object") return;
+    REMOTE_KEYS.forEach(k => { if (c[k] !== undefined && c[k] !== null) B[k] = c[k]; });
+    if (!Array.isArray(B.daysOff)) B.daysOff = Object.values(B.daysOff || {});
+    BLOCK = B.game + B.change;
+  }
 
   /* ============ POMOCNÉ ============ */
   const pad = n => String(n).padStart(2, "0");
@@ -270,6 +290,10 @@
     const path = "laser/" + env;
     return {
       mode: "firebase",
+      async config() {
+        try { return (await fb.get(fb.ref(db, path + "/config"))).val(); }
+        catch (e) { console.warn("[rezervácia] nastavenia z Firebase", e); return null; }
+      },
       watch(from, to, cb, onError) {
         const q = fb.query(fb.ref(db, path + "/slots"), fb.orderByKey(), fb.startAt(from), fb.endAt(to));
         return fb.onValue(q, snap => {
@@ -306,7 +330,9 @@
     notice: "",
     error: "",
     sending: false,
-    done: null
+    done: null,
+    offerModal: null,            // deň, pre ktorý ukazujeme okno „vyberte si 4. hru zadarmo“
+    offerShown: new Set()        // dni, pre ktoré sme okno už ukázali (neotravovať opakovane)
   };
   let store = null, unwatch = null, focusKey = null;
 
@@ -359,6 +385,73 @@
   const freeCount = date => timesFor(date).filter(t => !takenByOthers(date, t)).length;
   const sortedItems = () => [...state.selected.values()].sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
 
+  /* ============ PONUKA 3+1 ============ */
+  /* Partia aspoň 8 hráčov, ktorá si v jeden deň vyberie 3 hry, dostane 4. hru zadarmo. */
+  const offerOn = () => !!(B.offer && B.offer.minPlayers && B.offer.paid);
+  const bundle = () => B.offer.paid + (B.offer.free || 1);
+  const offerEnough = () => offerOn() && state.players >= B.offer.minPlayers;
+  function gamesPerDay() {
+    const m = {};
+    for (const it of state.selected.values()) m[it.date] = (m[it.date] || 0) + 1;
+    return m;
+  }
+  /* Ktoré vybrané hry sú zadarmo: v každom dni každá štvrtá (pri 3+1). */
+  function freeKeys() {
+    const out = new Set();
+    if (!offerEnough()) return out;
+    const byDay = {};
+    sortedItems().forEach(it => { (byDay[it.date] = byDay[it.date] || []).push(it); });
+    Object.values(byDay).forEach(list => list.forEach((it, i) => { if ((i + 1) % bundle() === 0) out.add(it.date + " " + it.time); }));
+    return out;
+  }
+  const friends = n => n + (n === 1 ? " kamaráta" : " kamarátov");
+  const offerName = () => B.offer.paid + "+" + (B.offer.free || 1);
+
+  function offerHints() {
+    if (!offerOn()) return "";
+    const counts = gamesPerDay(), days = Object.keys(counts).sort(), out = [];
+    if (offerEnough()) {
+      days.filter(d => counts[d] >= bundle()).forEach(d => out.push(`🎁 ${dayLabel(d)}: ${bundle()}. hra je od nás zadarmo (ponuka ${offerName()}).`));
+      days.filter(d => counts[d] % bundle() === B.offer.paid).forEach(d =>
+        out.push(`🎁 ${dayLabel(d)}: vyberte si ešte jednu hru, máte ju od nás zadarmo (ponuka ${offerName()}).`));
+    } else if (days.some(d => counts[d] >= B.offer.paid)) {
+      const miss = B.offer.minPlayers - state.players;
+      out.push(`🎁 Zavolajte ešte ${friends(miss)} (spolu aspoň ${B.offer.minPlayers} hráčov) na všetky ${B.offer.paid} hry a ${bundle()}. hru máte zadarmo (ponuka ${offerName()}).`);
+    }
+    return out.map(t => `<p class="rz-offer">${t}</p>`).join("");
+  }
+
+  /* Deň, kde má partia presne toľko hier, že by ďalšia bola zadarmo (napr. 3 pri 3+1). */
+  function offerDay() {
+    if (!offerOn()) return null;
+    const counts = gamesPerDay();
+    return Object.keys(counts).sort().find(d => counts[d] % bundle() === B.offer.paid) || null;
+  }
+
+  /* Okno s ponukou: "pick" = po výbere 3. hry, "continue" = pri Pokračovať, "friends" = málo hráčov. */
+  function offerModal() {
+    const m = state.offerModal;
+    if (!m) return "";
+    const friendsCase = m.kind === "friends";
+    const miss = B.offer.minPlayers - state.players;
+    const text = friendsCase
+      ? `Na ${dayLabel(m.date)} máte vybrané ${games(B.offer.paid)}. Zavolajte ešte <b>${friends(miss)}</b> (spolu aspoň ${B.offer.minPlayers} hráčov) a ${bundle()}. hru máte od nás <b>zadarmo</b> (ponuka ${offerName()}).`
+      : `Ste partia aspoň ${B.offer.minPlayers} hráčov a na ${dayLabel(m.date)} máte vybrané ${games(B.offer.paid)}. Vyberte si ešte jednu hru, tú máte od nás <b>zadarmo</b> (ponuka ${offerName()}).`;
+    const noLabel = m.kind === "pick" ? "Nie, ďakujem" : "Pokračovať bez ponuky";
+    const yes = friendsCase
+      ? `<button type="button" class="rz-btn" data-act="offer-players">Zmeniť počet hráčov</button>`
+      : `<button type="button" class="rz-btn" data-act="offer-yes">Vybrať ${bundle()}. hru</button>`;
+    return `
+      <div class="rz-modal" role="dialog" aria-modal="true" aria-labelledby="rz-offer-title">
+        <div class="rz-modal-box">
+          <div class="rz-modal-icon" aria-hidden="true">🎁</div>
+          <h3 id="rz-offer-title">${friendsCase ? `${bundle()}. hra môže byť zadarmo!` : `Máte ${bundle()}. hru zadarmo!`}</h3>
+          <p>${text}</p>
+          <div class="rz-nav"><button type="button" class="rz-btn ghost" data-act="offer-no">${noLabel}</button>${yes}</div>
+        </div>
+      </div>`;
+  }
+
   /* Zobrazujeme aktuálny a nasledujúci mesiac. */
   function monthsShown() {
     const d = now(), a = new Date(d.getFullYear(), d.getMonth(), 1), b = new Date(d.getFullYear(), d.getMonth() + 1, 1);
@@ -378,6 +471,11 @@
       catch (e) { console.error("[rezervácia]", e); }
     }
     if (!store) store = localStore();
+    if (store.config) {
+      applyRemoteConfig(await store.config());
+      state.players = Math.min(B.maxPlayers, Math.max(B.minPlayers, state.players));
+      render();
+    }
     const [from, to] = range();
     unwatch = store.watch(from, to, busy => {
       state.busy = busy;
@@ -466,7 +564,7 @@
   }
 
   function viewTerm() {
-    const items = sortedItems();
+    const items = sortedItems(), free = freeKeys();
     return `
       <h2>Vyberte deň a čas</h2>
       <p class="rz-sub">Jedna hra trvá ${B.game} minút. Môžete si vybrať aj viac hier, medzi nimi máte vždy pauzu na oddych.</p>
@@ -477,8 +575,9 @@
       <div class="rz-picked">
         <h3>Vaše hry${items.length ? " (" + games(items.length) + ")" : ""}</h3>
         ${items.length
-          ? "<ul>" + items.map(it => `<li><span>${itemLabel(it)}</span><button type="button" class="rz-link" data-act="remove" data-key="${it.date} ${it.time}">odstrániť</button></li>`).join("") + "</ul>"
+          ? "<ul>" + items.map(it => `<li><span>${itemLabel(it)}${free.has(it.date + " " + it.time) ? ' <em class="rz-free">zadarmo</em>' : ""}</span><button type="button" class="rz-link" data-act="remove" data-key="${it.date} ${it.time}">odstrániť</button></li>`).join("") + "</ul>"
           : '<p class="rz-hint">Zatiaľ nemáte vybraný žiadny čas.</p>'}
+        ${offerHints()}
       </div>
       <div class="rz-nav"><button type="button" class="rz-btn ghost" data-act="to1">Späť</button><button type="button" class="rz-btn" data-act="to3"${items.length ? "" : " disabled"}>Pokračovať</button></div>`;
   }
@@ -489,9 +588,11 @@
       <h2>Vaše údaje</h2>
       <ul class="rz-summary">
         <li><span>Počet hráčov</span><b>${state.players}</b></li>
-        <li><span>${items.length > 1 ? "Hry" : "Hra"}</span><b>${items.map(itemLabel).join("<br>")}</b></li>
+        <li><span>${items.length > 1 ? "Hry" : "Hra"}</span><b>${items.map(it => itemLabel(it) + (freeKeys().has(it.date + " " + it.time) ? " (zadarmo)" : "")).join("<br>")}</b></li>
+        ${freeKeys().size ? `<li><span>Ponuka ${offerName()}</span><b>${games(freeKeys().size)} zadarmo</b></li>` : ""}
         <li><span>Platba</span><b>na mieste</b></li>
       </ul>
+      ${offerHints()}
       <form class="rz-form" novalidate>
         <label>Meno a priezvisko<input name="name" required minlength="3" maxlength="80" autocomplete="name"></label>
         <div class="rz-row">
@@ -513,7 +614,7 @@
         <h2>Rezervácia je potvrdená</h2>
         <p>${players(d.players)}</p>
         <ul>${d.items.map(it => "<li>" + itemLabel(it) + "</li>").join("")}</ul>
-        <p class="rz-sub">${B.emailToCustomer
+        <p class="rz-sub">${d.mailed
           ? "Potvrdenie sme poslali na <b>" + esc(d.email) + "</b>. Ak ho nevidíte, pozrite aj priečinok spam."
           : "Tešíme sa na vás. Ak potrebujete niečo zmeniť, zavolajte nám na " + esc(B.phone) + "."}</p>
         <button type="button" class="rz-btn ghost" data-act="again">Nová rezervácia</button>
@@ -529,7 +630,12 @@
     let body;
     if (state.step === 4) body = viewDone();
     else body = stepsBar() + (state.step === 1 ? viewPlayers() : state.step === 2 ? viewTerm() : viewForm());
-    root.innerHTML = testBanner() + `<div class="rz-card">${body}</div>`;
+    root.innerHTML = testBanner() + `<div class="rz-card">${body}</div>` + (state.step === 2 ? offerModal() : "");
+    if (state.step === 2 && state.offerModal) {
+      const yes = root.querySelector('[data-act="offer-yes"]');
+      if (yes) yes.focus({ preventScroll: true });
+      focusKey = null;
+    }
     if (focusKey) {
       const el = root.querySelector(`[data-key="${focusKey}"]`) || root.querySelector(`[data-date="${focusKey}"]`);
       if (el) el.focus({ preventScroll: true });
@@ -555,7 +661,12 @@
       render();
     } else if (act === "to1") goStep(1);
     else if (act === "to2") goStep(2);
-    else if (act === "to3") goStep(3);
+    else if (act === "to3") {
+      // Pri Pokračovať pripomenúť ponuku 3+1, ak má partia v niektorý deň 3 hry
+      const day = offerDay();
+      if (day) { state.offerModal = { date: day, kind: offerEnough() ? "continue" : "friends" }; render(); }
+      else goStep(3);
+    }
     else if (act === "day") {
       state.day = b.dataset.date;
       state.notice = "";
@@ -568,11 +679,29 @@
       state.notice = "";
       if (state.selected.has(key)) state.selected.delete(key);
       else if (state.selected.size >= B.maxGames) state.notice = "V jednej rezervácii môžete mať najviac " + games(B.maxGames) + ". Pre viac nám zavolajte na " + B.phone + ".";
-      else state.selected.set(key, { date, time });
+      else {
+        state.selected.set(key, { date, time });
+        // 3 hry v jeden deň a aspoň 8 hráčov → ponúknuť 4. hru zadarmo (raz pre daný deň)
+        if (offerEnough() && gamesPerDay()[date] === B.offer.paid && !state.offerShown.has(date)) {
+          state.offerShown.add(date);
+          state.offerModal = { date, kind: "pick" };
+        }
+      }
       focusKey = key;
       render();
+    } else if (act === "offer-yes" || act === "offer-no" || act === "offer-players") {
+      const m = state.offerModal;
+      state.offerModal = null;
+      if (act === "offer-players") { goStep(1); return; }
+      if (act === "offer-no" && m && m.kind !== "pick") { goStep(3); return; }   // pri Pokračovať: ísť ďalej bez ponuky
+      if (act === "offer-yes" && m) state.day = m.date;
+      render();
+      if (act === "offer-yes") {
+        const el = document.getElementById("rz-times");
+        if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
     } else if (act === "remove") { state.selected.delete(b.dataset.key); render(); }
-    else if (act === "again") { state.done = null; state.selected.clear(); state.day = null; goStep(1); }
+    else if (act === "again") { state.done = null; state.selected.clear(); state.offerShown.clear(); state.day = null; goStep(1); }
     else if (act === "reset" && store && store.reset) { store.reset(); state.selected.clear(); render(); }
   });
 
@@ -583,6 +712,26 @@
     if (p.startsWith("00")) return "+" + p.slice(2);
     if (p.startsWith("0")) return "+421" + p.slice(1);
     return p;
+  }
+
+  /* Potvrdzovací e-mail pošle WordPress (admin-ajax.php, akcia cpr_mail). Rezervácia je už uložená,
+     takže keď e-mail zlyhá, len to zákazníkovi nepovieme – rezerváciu to neruší. */
+  async function sendMail(id, data) {
+    const body = new FormData();
+    body.append("action", "cpr_mail");
+    body.append("id", id);
+    body.append("email", data.email);
+    body.append("name", data.name);
+    body.append("players", String(data.players));
+    Object.keys(data.games).forEach(g => body.append("games[]", g));
+    const ctrl = typeof AbortController === "function" ? new AbortController() : null;
+    const timer = ctrl && setTimeout(() => ctrl.abort(), 12000);
+    try {
+      const res = await fetch(CFG.mailUrl, { method: "POST", body, credentials: "same-origin", signal: ctrl ? ctrl.signal : undefined });
+      const json = await res.json().catch(() => null);
+      return !!(res.ok && json && json.success);
+    } catch (e) { console.error("[rezervácia] e-mail", e); return false; }
+    finally { if (timer) clearTimeout(timer); }
   }
 
   async function submit(form) {
@@ -604,8 +753,10 @@
 
     state.sending = true; btn.disabled = true; say("Odosielam rezerváciu…");
     try {
-      await store.book(items, data);
-      state.done = { items, email: c.email, players: state.players };
+      const id = await store.book(items, data);
+      let mailed = false;
+      if (B.emailToCustomer && CFG.mailUrl && store.mode === "firebase") { say("Posielam potvrdenie na e-mail…"); mailed = await sendMail(id, data); }
+      state.done = { items, email: c.email, players: state.players, mailed };
       state.selected.clear();
       goStep(4);
     } catch (err) {
@@ -620,7 +771,6 @@
 
   init();
 })();
-
-  </script>
+</script>
 </body>
 </html>
