@@ -204,8 +204,7 @@
       }
     };
   </script>
-  <script>
-/* Rezervácia laser game.
+  <script>/* Rezervácia laser game.
    Kroky: 1) počet hráčov, 2) deň v kalendári (2 mesiace) a časy, 3) kontaktné údaje, 4) potvrdenie.
    - Po výbere času sa tej istej partii zablokujú časy počas oddychu (rest), iným partiám ostávajú voľné.
    - Obsadené časy (od iných) sú červené a nedajú sa kliknúť.
@@ -308,11 +307,14 @@
         }, onError);
       },
       /* Rezervácia aj obsadenie časov v jednom zápise: buď prejde celé, alebo nič.
-         Pravidlá Firebase nedovolia zapísať čas, ktorý už niekto má. */
+         Pravidlá Firebase nedovolia zapísať čas, ktorý už niekto má.
+         Telefón a e-mail idú do samostatnej časti contacts, ktorú číta len vedúci a bar (nie zdieľané zariadenie). */
       async book(items, data) {
         const id = fb.push(fb.ref(db, path + "/bookings")).key;
-        const u = {};
-        u[path + "/bookings/" + id] = Object.assign({}, data, { createdAt: fb.serverTimestamp(), status: "new" });
+        const u = {}, rest = Object.assign({}, data);
+        delete rest.phone; delete rest.email;
+        u[path + "/bookings/" + id] = Object.assign(rest, { createdAt: fb.serverTimestamp(), status: "new" });
+        u[path + "/contacts/" + id] = { phone: data.phone, email: data.email };
         items.forEach(it => { u[path + "/slots/" + it.date + "/" + it.time.replace(":", "")] = id; });
         try { await fb.update(fb.ref(db), u); }
         catch (e) {
@@ -826,7 +828,6 @@
 
   init();
 })();
-
-  </script>
+</script>
 </body>
 </html>
