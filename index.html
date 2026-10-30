@@ -9,7 +9,8 @@
   <style>
     /* ===== TEST rezervácie laser game (2026-10-26) =====
        Rovnaký formulár ako na webe (WordPress plugin chillpoint-rezervacie, assets/rezervacia.css + .js vložené nižšie),
-       ale VŽDY ukladá do TESTOVACEJ časti Firebase (laser/test) → rezervácie vidno v rezervacie.html pri „🧪 Test“.
+       ukladá do TESTOVACEJ časti Firebase (laser/test) → rezervácie vidno v rezervacie.html pri „🧪 Test“;
+       s ?ostre do OSTREJ (laser/live) – „🟢 Ostré“ (2026-10-31).
        Pri zmene pluginu treba sem skopírovať novú rezervacia.css a rezervacia.js. */
     html,body{margin:0;background:#0a0c0f;color:#fff;font-family:Arial,Helvetica,sans-serif;overflow-x:clip}
     .tbar{max-width:860px;margin:0 auto;padding:14px 16px 4px;font-size:14px;line-height:1.5}
@@ -193,12 +194,21 @@
   </style>
 </head>
 <body>
-  <div class="tbar"><div class="box">🧪 <b>TESTOVACIA rezervácia</b> – ukladá sa len do testovacej časti, zákazníci ju nevidia. Vzhľad: <a href="?">tmavý</a> · <a href="?light">svetlý</a></div></div>
+  <div class="tbar"><div class="box" id="tbox"></div></div>
   <div id="rz"></div>
   <script>
-    if (location.search.includes('light')) { document.getElementById('rz').className = 'rz-light'; document.body.style.background = '#fff'; document.body.style.color = '#111'; }
+    // (2026-10-31) ?ostre = prepojené s OSTRÝMI rezerváciami (laser/live) – vidno naozaj obsadené časy (aj zapísané v appke
+    // z papiera) a rezervácia sa uloží naostro; bez neho testovacia časť (laser/test). ?light = svetlý vzhľad.
+    const LIVE = /(^|[?&])ostre(&|$)/.test(location.search.slice(1)), LIGHT = location.search.includes('light');
+    if (LIGHT) { document.getElementById('rz').className = 'rz-light'; document.body.style.background = '#fff'; document.body.style.color = '#111'; }
+    const q = (live, light) => '?' + [live ? 'ostre' : '', light ? 'light' : ''].filter(Boolean).join('&');
+    document.getElementById('tbox').innerHTML = (LIVE
+      ? '🟢 <b>OSTRÉ rezervácie</b> – vidíš naozaj obsadené časy a rezervácia sa <b>uloží naostro</b> (v appke pri „🟢 Ostré“). E-mail odtiaľto nechodí.'
+      : '🧪 <b>TESTOVACIA rezervácia</b> – ukladá sa len do testovacej časti, zákazníci ju nevidia.')
+      + `<br>Prepnúť: <a href="${q(false, LIGHT)}">🧪 Test</a> · <a href="${q(true, LIGHT)}">🟢 Ostré</a> &nbsp;|&nbsp; Vzhľad: <a href="${q(LIVE, false)}">tmavý</a> · <a href="${q(LIVE, true)}">svetlý</a>`;
+    if (LIVE) { document.getElementById('tbox').style.cssText = 'background:#10291a;border-color:#2f7a4a;color:#9be6b4'; document.title = 'Ostré rezervácie · ChillPoint'; }
     window.CP_CONFIG = {
-      env: 'test', useFirebase: true,
+      env: LIVE ? 'live' : 'test', useFirebase: true,
       firebase: {
         apiKey: "AIzaSyB-2HeoePKrcsdawvI1LCOTQ6vWjibItpU",
         authDomain: "chillpoint-smeny-350c4.firebaseapp.com",
