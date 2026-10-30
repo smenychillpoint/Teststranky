@@ -245,7 +245,7 @@
   /* Nastavenia, ktoré vedúci mení v internej appke (laser/<env>/config vo Firebase), prepíšu tie z WordPressu.
      „offers“ = zoznam ponúk (od 2026-10-27); staršie „offer“ (jedna ponuka) sa ešte číta, ak „offers“ chýba.
      „stepOrder“ a „webPkgs“ od 1.5.0 (2026-10-30). */
-  const REMOTE_KEYS = ["hours", "daysOff", "step", "game", "change", "rest", "minPlayers", "maxPlayers", "maxGames", "leadMinutes", "offer", "offers", "offerStep", "stepOrder", "webPkgs"];
+  const REMOTE_KEYS = ["hours", "daysOff", "step", "game", "change", "rest", "minPlayers", "maxPlayers", "maxGames", "leadMinutes", "offer", "offers", "offerStep", "stepOrder", "webPkgs", "mailCustomer"];
   function applyRemoteConfig(c) {
     if (!c || typeof c !== "object") return;
     REMOTE_KEYS.forEach(k => { if (c[k] !== undefined && c[k] !== null) B[k] = c[k]; });
@@ -1015,23 +1015,25 @@
     return p;
   }
 
-  /* Potvrdzovací e-mail pošle WordPress (admin-ajax.php, akcia cpr_mail). Rezervácia je už uložená,
-     takže keď e-mail zlyhá, len to zákazníkovi nepovieme – rezerváciu to neruší. */
+  /* E-maily pošle WordPress (admin-ajax.php, akcia cpr_mail): potvrdenie zákazníkovi a upozornenie nám – čo sa pošle,
+     nastavuje vedúci v appke. Rezervácia je už uložená, takže keď e-mail zlyhá, len to zákazníkovi nepovieme.
+     Vracia true, keď odišlo potvrdenie zákazníkovi. */
   async function sendMail(id, data) {
     const body = new FormData();
     body.append("action", "cpr_mail");
     body.append("id", id);
     body.append("email", data.email);
     body.append("name", data.name);
+    body.append("phone", data.phone);
     body.append("players", String(data.players));
-    if (data.pkg) body.append("pkg", data.pkg);
+    if (data.pkg) { body.append("pkg", data.pkg); body.append("mStart", data.mStart); body.append("mOrder", data.mOrder); }
     Object.keys(data.games).forEach(g => body.append("games[]", g));
     const ctrl = typeof AbortController === "function" ? new AbortController() : null;
     const timer = ctrl && setTimeout(() => ctrl.abort(), 12000);
     try {
       const res = await fetch(CFG.mailUrl, { method: "POST", body, credentials: "same-origin", signal: ctrl ? ctrl.signal : undefined });
       const json = await res.json().catch(() => null);
-      return !!(res.ok && json && json.success);
+      return !!(res.ok && json && json.success && (json.data === "sent" || (json.data && json.data.customer)));
     } catch (e) { console.error("[rezervácia] e-mail", e); return false; }
     finally { if (timer) clearTimeout(timer); }
   }
@@ -1064,7 +1066,10 @@
     try {
       const id = await store.book(items, data, pk);
       let mailed = false;
-      if (B.emailToCustomer && CFG.mailUrl && store.mode === "firebase") { say("Posielam potvrdenie na e-mail…"); mailed = await sendMail(id, data); }
+      if (CFG.mailUrl && store.mode === "firebase") {
+        if (B.mailCustomer !== undefined ? B.mailCustomer !== false : B.emailToCustomer) say("Posielam potvrdenie na e-mail…");
+        mailed = await sendMail(id, data);
+      }
       state.done = { items, email: c.email, players: state.players, mailed, pkg: P ? P.name : "", pkgIcon: P ? P.icon : "", attr };
       clearStart();
       goStep("done");
