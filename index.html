@@ -178,6 +178,18 @@
 #rz .rz-modal-box p { color: var(--rz-muted); margin: 0; }
 #rz .rz-modal-box p b { color: var(--rz-ink); }
 #rz .rz-modal-box .rz-nav { margin-top: 20px; justify-content: center; }
+/* ---- 1.5.0: Čo si rezervujete (laser game / balíček), poradie v balíčku ---- */
+#rz .rz-opts { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; margin-top: 16px; }
+#rz .rz-opt { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; text-align: left; padding: 16px 18px; border: 2px solid var(--rz-line); border-radius: 12px; background: var(--rz-free); color: var(--rz-ink); line-height: 1.35; }
+#rz .rz-opt b { font-size: 1.15rem; }
+#rz .rz-opt small { color: var(--rz-muted); font-size: .88rem; }
+#rz .rz-opt span { font-size: .93rem; }
+#rz .rz-opt:hover { border-color: var(--rz-accent); }
+#rz .rz-opt.on { border-color: var(--rz-accent); background: rgba(239, 199, 79, .12); }
+#rz .rz-seg { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 20px; }
+#rz .rz-seg button { flex: 1 1 200px; padding: 11px 14px; border: 1px solid var(--rz-line); border-radius: 8px; background: var(--rz-free); color: var(--rz-ink); font-weight: 600; }
+#rz .rz-seg button.on { background: var(--rz-accent); border-color: var(--rz-accent); color: var(--rz-accent-ink); }
+#rz .rz-picked li b { text-align: right; }
   </style>
 </head>
 <body>
@@ -204,11 +216,14 @@
       }
     };
   </script>
-  <script>/* Rezervácia laser game.
-   Kroky: 1) počet hráčov, 2) deň v kalendári (2 mesiace) a časy, 3) kontaktné údaje, 4) potvrdenie.
+  <script>/* Rezervácia laser game (plugin 1.5.0).
+   Kroky: [Čo si rezervujete – len keď sú zapnuté balíčky na webe] → počet hráčov a termín (poradie nastaví vedúci
+   v internej appke) → kontaktné údaje → potvrdenie.
    - Po výbere času sa tej istej partii zablokujú časy počas oddychu (rest), iným partiám ostávajú voľné.
    - Obsadené časy (od iných) sú červené a nedajú sa kliknúť.
-   - Úložisko: Firebase (laser/<env>/…), alebo testovací režim v tomto prehliadači. */
+   - Balíček (Monster Chill a pod.): zákazník vyberie len začiatok, hry rozpíšeme sami (každá o rest min).
+   - Úložisko: Firebase (laser/<env>/…), alebo testovací režim v tomto prehliadači.
+   Od 1.5.0 sa web riadi nastaveniami z appky (laser/<env>/config + settings/rezPackages) – pri zmene netreba plugin nahrávať znova. */
 (function () {
   "use strict";
 
@@ -221,18 +236,22 @@
     minPlayers: 2, maxPlayers: 16, maxGames: 8, leadMinutes: 15,
     offers: [{ minPlayers: 8, paid: 3, free: 1 }],   // ponuky (3+1 a ďalšie); prázdne = žiadna
     offerStep: "off",                                 // výber ponuky zákazníkom: "off" | "before" / "after" (pred / po počte hráčov)
+    stepOrder: "players",                             // poradie krokov: "players" (najprv počet hráčov) | "term" (najprv termín)
+    webPkgs: {},                                      // balíčky, ktoré sa dajú rezervovať na webe: { monster: true }
     phone: "", privacyUrl: "#", emailToCustomer: false
   }, CFG.booking || {});
   let BLOCK = B.game + B.change;            // na koľko minút hra zablokuje arénu pre iné partie
 
   /* Nastavenia, ktoré vedúci mení v internej appke (laser/<env>/config vo Firebase), prepíšu tie z WordPressu.
-     „offers“ = zoznam ponúk (od 2026-10-27); staršie „offer“ (jedna ponuka) sa ešte číta, ak „offers“ chýba. */
-  const REMOTE_KEYS = ["hours", "daysOff", "step", "game", "change", "rest", "minPlayers", "maxPlayers", "maxGames", "leadMinutes", "offer", "offers", "offerStep"];
+     „offers“ = zoznam ponúk (od 2026-10-27); staršie „offer“ (jedna ponuka) sa ešte číta, ak „offers“ chýba.
+     „stepOrder“ a „webPkgs“ od 1.5.0 (2026-10-30). */
+  const REMOTE_KEYS = ["hours", "daysOff", "step", "game", "change", "rest", "minPlayers", "maxPlayers", "maxGames", "leadMinutes", "offer", "offers", "offerStep", "stepOrder", "webPkgs"];
   function applyRemoteConfig(c) {
     if (!c || typeof c !== "object") return;
     REMOTE_KEYS.forEach(k => { if (c[k] !== undefined && c[k] !== null) B[k] = c[k]; });
     if (c.offers === undefined || c.offers === null) { if (c.offer !== undefined && c.offer !== null) B.offers = c.offer ? [c.offer] : []; }
     if (!Array.isArray(B.daysOff)) B.daysOff = Object.values(B.daysOff || {});
+    if (!B.webPkgs || typeof B.webPkgs !== "object") B.webPkgs = {};   // "" = žiadny balíček
     BLOCK = B.game + B.change;
   }
 
@@ -249,10 +268,13 @@
   const itemLabel = it => dayLabel(it.date) + " o " + it.time;
   const games = n => n + (n === 1 ? " hra" : n < 5 ? " hry" : " hier");
   const players = n => n + (n < 5 ? " hráči" : " hráčov");
+  const people = n => n + (n === 1 ? " osoba" : n < 5 ? " osoby" : " osôb");
 
   /* ============ ÚLOŽISKO ============ */
   /* watch(from, to, cb) → cb({ "2026-10-24": Set{"18:00", …} }) pri každej zmene; vracia funkciu na zrušenie.
-     book(items, data) → uloží rezerváciu; ak je niektorý čas medzitým obsadený, hodí chybu s code "taken". */
+     watchPk(from, to, cb) → to isté pre začiatky balíčkov (laser/<env>/pk).
+     book(items, data, pk) → uloží rezerváciu (pk = {date, time} začiatok balíčka); ak je niektorý čas medzitým obsadený,
+     hodí chybu s code "taken". */
 
   function localStore() {
     const KEY = "cp_laser_test";
@@ -260,18 +282,24 @@
     const listeners = new Set();
     const notify = () => listeners.forEach(fn => fn());
     window.addEventListener("storage", e => { if (e.key === KEY) notify(); });
+    const sets = (all, from, to) => {
+      const out = {};
+      Object.keys(all || {}).filter(d => d >= from && d <= to).forEach(d => { out[d] = new Set(Object.keys(all[d]).map(k => k.slice(0, 2) + ":" + k.slice(2))); });
+      return out;
+    };
     return {
       mode: "test",
       watch(from, to, cb) {
-        const run = () => {
-          const all = read().slots, out = {};
-          Object.keys(all).filter(d => d >= from && d <= to).forEach(d => { out[d] = new Set(Object.keys(all[d]).map(k => k.slice(0, 2) + ":" + k.slice(2))); });
-          cb(out);
-        };
+        const run = () => cb(sets(read().slots, from, to));
         listeners.add(run); run();
         return () => listeners.delete(run);
       },
-      async book(items, data) {
+      watchPk(from, to, cb) {
+        const run = () => cb(sets(read().pk, from, to));
+        listeners.add(run); run();
+        return () => listeners.delete(run);
+      },
+      async book(items, data, pk) {
         const db = read();
         if (items.some(it => db.slots[it.date] && db.slots[it.date][it.time.replace(":", "")])) {
           const err = new Error("taken"); err.code = "taken"; throw err;
@@ -279,6 +307,7 @@
         const id = "t" + Date.now().toString(36);
         db.bookings[id] = Object.assign({}, data, { createdAt: Date.now() });
         items.forEach(it => { (db.slots[it.date] = db.slots[it.date] || {})[it.time.replace(":", "")] = id; });
+        if (pk) { db.pk = db.pk || {}; (db.pk[pk.date] = db.pk[pk.date] || {})[pk.time.replace(":", "")] = id; }
         localStorage.setItem(KEY, JSON.stringify(db));
         notify();
         return id;
@@ -292,30 +321,41 @@
     const [{ initializeApp }, fb] = await Promise.all([import(base + "firebase-app.js"), import(base + "firebase-database.js")]);
     const db = fb.getDatabase(initializeApp(cfg, "cp-rezervacie"));
     const path = "laser/" + env;
+    const sets = snap => {
+      const out = {};
+      snap.forEach(d => { out[d.key] = new Set(Object.keys(d.val() || {}).map(k => k.slice(0, 2) + ":" + k.slice(2))); });
+      return out;
+    };
     return {
       mode: "firebase",
       async config() {
         try { return (await fb.get(fb.ref(db, path + "/config"))).val(); }
         catch (e) { console.warn("[rezervácia] nastavenia z Firebase", e); return null; }
       },
+      /* balíčky (Monster Chill a pod.) upravuje vedúci v appke – sú verejne čitateľné */
+      async packages() {
+        try { return (await fb.get(fb.ref(db, "settings/rezPackages"))).val(); }
+        catch (e) { console.warn("[rezervácia] balíčky z Firebase", e); return null; }
+      },
       watch(from, to, cb, onError) {
         const q = fb.query(fb.ref(db, path + "/slots"), fb.orderByKey(), fb.startAt(from), fb.endAt(to));
-        return fb.onValue(q, snap => {
-          const out = {};
-          snap.forEach(d => { out[d.key] = new Set(Object.keys(d.val() || {}).map(k => k.slice(0, 2) + ":" + k.slice(2))); });
-          cb(out);
-        }, onError);
+        return fb.onValue(q, snap => cb(sets(snap)), onError);
+      },
+      watchPk(from, to, cb) {
+        const q = fb.query(fb.ref(db, path + "/pk"), fb.orderByKey(), fb.startAt(from), fb.endAt(to));
+        return fb.onValue(q, snap => cb(sets(snap)), e => { console.warn("[rezervácia] začiatky balíčkov", e); cb({}); });
       },
       /* Rezervácia aj obsadenie časov v jednom zápise: buď prejde celé, alebo nič.
          Pravidlá Firebase nedovolia zapísať čas, ktorý už niekto má.
          Telefón a e-mail idú do samostatnej časti contacts, ktorú číta len vedúci a bar (nie zdieľané zariadenie). */
-      async book(items, data) {
+      async book(items, data, pk) {
         const id = fb.push(fb.ref(db, path + "/bookings")).key;
         const u = {}, rest = Object.assign({}, data);
         delete rest.phone; delete rest.email;
         u[path + "/bookings/" + id] = Object.assign(rest, { createdAt: fb.serverTimestamp(), status: "new" });
         u[path + "/contacts/" + id] = { phone: data.phone, email: data.email };
         items.forEach(it => { u[path + "/slots/" + it.date + "/" + it.time.replace(":", "")] = id; });
+        if (pk) u[path + "/pk/" + pk.date + "/" + pk.time.replace(":", "")] = id;
         try { await fb.update(fb.ref(db), u); }
         catch (e) {
           if (String(e.code || e.message).toUpperCase().includes("PERMISSION")) { const err = new Error("taken"); err.code = "taken"; throw err; }
@@ -328,12 +368,18 @@
 
   /* ============ STAV ============ */
   const state = {
-    step: 1,
+    step: "players",             // "what" | "players" | "term" | "form" | "done"
+    moved: false,                // zákazník už prešiel na iný krok (po načítaní nastavení ho nevraciame)
+    what: null,                  // "laser" | id balíčka (null = ešte nevybral)
     players: B.minPlayers,
     day: null,                   // vybraný deň "2026-10-24"
     busy: {},                    // obsadené časy od iných: { date: Set }
+    pk: {},                      // začiatky iných balíčkov: { date: Set }
     loaded: false,
     selected: new Map(),         // "2026-10-24 18:00" -> { date, time }
+    mStart: null,                // balíček: vybraný začiatok "16:00"
+    mDay: null,                  // balíček: deň začiatku
+    mOrder: "games",             // balíček: "games" (najprv laser game) | "attr" (najprv atrakcie)
     notice: "",
     error: "",
     sending: false,
@@ -342,7 +388,7 @@
     offerModal: null,            // deň, pre ktorý ukazujeme okno „vyberte si 4. hru zadarmo“
     offerShown: new Set()        // dni, pre ktoré sme okno už ukázali (neotravovať opakovane)
   };
-  let store = null, unwatch = null, focusKey = null;
+  let store = null, unwatch = null, unwatchPk = null, focusKey = null;
 
   /* ============ ČASY A DNI ============ */
   const now = () => new Date();
@@ -390,10 +436,66 @@
     return "free";
   }
 
-  const freeCount = date => timesFor(date).filter(t => !takenByOthers(date, t)).length;
+  const freeCount = date => {
+    const P = curPkg();
+    return P ? timesFor(date).filter(t => pkgStartOk(date, t, P, state.mOrder)).length : timesFor(date).filter(t => !takenByOthers(date, t)).length;
+  };
   const sortedItems = () => [...state.selected.values()].sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
 
-  /* ============ PONUKY (3+1 a ďalšie) ============ */
+  /* ============ BALÍČKY (Monster Chill a pod.) ============ */
+  /* Balíčky upravuje vedúci v appke (settings/rezPackages), ktoré idú na web, zaškrtne v nastaveniach webu (webPkgs).
+     Balíček = P.games hier laser game (každá o B.rest min) a P.attrMin min atrakcií (P.attrText), pred alebo po hrách.
+     Ďalší balíček môže začať najskôr o P.spacing min (kvôli atrakciám) – preto web číta začiatky balíčkov z laser/<env>/pk. */
+  const PKG_DEF = { monster: { name: "Monster Chill", games: 3, attrMin: 60, attrText: "VR + PS", pizzaMin: 30, spacing: 60, players: 10, webMin: 8, webMax: 12, webText: "Oslava pre deti aj dospelých: 3 hry laser game a potom VR a PlayStation." } };
+  const PKG_NUM = { games: [1, 12, 3], attrMin: [0, 600, 60], pizzaMin: [0, 240, 30], spacing: [0, 600, 60], players: [1, 30, 10], webMin: [0, 30, 0], webMax: [0, 30, 0] };
+  let pkgRaw = null;
+  function pkgNorm(p) {
+    const o = { name: String((p && p.name) || "Balíček").slice(0, 40), attrText: String((p && p.attrText != null ? p.attrText : "VR + PS")).slice(0, 40), webText: String((p && p.webText) || "").slice(0, 200) };
+    Object.keys(PKG_NUM).forEach(k => { const [lo, hi, d] = PKG_NUM[k], v = parseInt(p && p[k], 10); o[k] = Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : d; });
+    return o;
+  }
+  function pkgs() {
+    const src = pkgRaw && typeof pkgRaw === "object" && Object.keys(pkgRaw).length ? pkgRaw : PKG_DEF, out = {};
+    Object.keys(src).forEach(id => { if (src[id] && /^[a-z0-9-]{1,30}$/.test(id)) out[id] = pkgNorm(src[id]); });
+    return out;
+  }
+  const webPkgs = () => { const all = pkgs(), w = B.webPkgs || {}; return Object.keys(all).filter(id => w[id] === true).map(id => Object.assign({ id }, all[id])); };
+  const curPkg = () => (state.what && state.what !== "laser" ? webPkgs().find(p => p.id === state.what) || null : null);
+  const minPl = () => { const P = curPkg(); return Math.max(1, (P && P.webMin) || B.minPlayers); };
+  const maxPl = () => { const P = curPkg(); return Math.min(30, Math.max(minPl(), (P && P.webMax) || B.maxPlayers)); };
+  const clampPl = n => Math.min(maxPl(), Math.max(minPl(), n));
+  const pkgGames = (start, order, P) => Array.from({ length: P.games }, (_, i) => toTime(toMin(start) + (order === "attr" ? P.attrMin : 0) + i * B.rest));
+  /* kedy budú atrakcie (orientačne, v minútach od polnoci) */
+  function pkgAttr(start, order, P) {
+    if (order === "attr") return [toMin(start), toMin(start) + P.attrMin];
+    const g = pkgGames(start, order, P), from = toMin(g[g.length - 1]) + B.game + P.pizzaMin;
+    return [from, from + P.attrMin];
+  }
+  const pkgText = P => games(P.games) + " laser game" + (P.attrMin ? " + " + P.attrText + " " + P.attrMin + " min" : "");
+  const maxSpacing = P => Math.max(P.spacing, ...Object.values(pkgs()).map(p => p.spacing));
+  /* Začiatok balíčka je voľný: všetky jeho hry sú v otváracích hodinách a voľné, celý balíček stihne do zatvorenia
+     a iný balíček nezačína bližšie ako rozostup. */
+  function pkgStartOk(date, start, P, order) {
+    const h = hoursFor(date);
+    if (!h || date + " " + start < earliest() || toMin(start) < h[0]) return false;
+    for (const t of pkgGames(start, order, P)) {
+      const m = toMin(t);
+      if (m < h[0] || m + B.game > h[1] || takenByOthers(date, t)) return false;
+    }
+    if (P.attrMin && pkgAttr(start, order, P)[1] > h[1]) return false;
+    const other = state.pk[date], sp = maxSpacing(P);
+    if (other) for (const s of other) if (Math.abs(toMin(s) - toMin(start)) < sp) return false;
+    return true;
+  }
+  function pickStart(date, start) {
+    const P = curPkg();
+    state.selected.clear();
+    state.mStart = start; state.mDay = date;
+    if (P && start) pkgGames(start, state.mOrder, P).forEach(t => state.selected.set(date + " " + t, { date, time: t }));
+  }
+  function clearStart() { state.selected.clear(); state.mStart = null; state.mDay = null; }
+
+  /* ============ PONUKY (3+1 a ďalšie) – len pri samotnom laser game ============ */
   /* Ponuka = {minPlayers, paid, free}: partia aspoň minPlayers hráčov, ktorá si v jeden deň vyberie paid hier,
      dostane ďalších free hier zadarmo (v každom bloku paid+free). Platí najvýhodnejšia ponuka pre počet hráčov. */
   function offersList() {
@@ -402,7 +504,7 @@
       .map(o => ({ minPlayers: +o.minPlayers, paid: +o.paid, free: Math.max(1, +o.free || 1) }))
       .sort((a, b) => a.minPlayers - b.minPlayers || a.paid - b.paid);
   }
-  const offerOn = () => offersList().length > 0;
+  const offerOn = () => !curPkg() && offersList().length > 0;
   const bundleOf = o => o.paid + o.free;
   const rate = o => o.free / bundleOf(o);
   /* ponuka, ktorú partia s n hráčmi má (najvýhodnejšia z tých, na ktoré má dosť ľudí) */
@@ -412,12 +514,14 @@
   const offerStepOn = () => offerOn() && (B.offerStep === "before" || B.offerStep === "after");
   const pickedOffer = () => offersList().find(o => offerName(o) === state.offerPick) || null;
   const cur = () => {
+    if (!offerOn()) return null;
     if (!offerStepOn()) return bestFor(state.players);
     const p = pickedOffer();
     return p && state.players >= p.minPlayers ? p : null;
   };
   /* najbližšia ponuka, na ktorú partii chýbajú ľudia (a ktorá by bola výhodnejšia ako tá, čo majú) */
   const nextOffer = () => {
+    if (!offerOn()) return null;
     if (offerStepOn()) { const p = pickedOffer(); return p && state.players < p.minPlayers ? p : null; }
     const c = cur(); return offersList().filter(o => o.minPlayers > state.players && (!c || rate(o) > rate(c))).sort((a, b) => a.minPlayers - b.minPlayers)[0] || null;
   };
@@ -498,6 +602,15 @@
     return [ymd(now()), ymd(last)];
   }
 
+  /* ============ KROKY ============ */
+  const STEP_LABEL = { what: "Čo si rezervujete", players: "Počet hráčov", term: "Termín", form: "Vaše údaje" };
+  function steps() {
+    return (webPkgs().length ? ["what"] : [])
+      .concat(B.stepOrder === "term" ? ["term", "players"] : ["players", "term"], ["form"]);
+  }
+  const nextStep = () => { const s = steps(); return s[s.indexOf(state.step) + 1] || "form"; };
+  const prevStep = () => { const s = steps(); return s[Math.max(0, s.indexOf(state.step) - 1)]; };
+
   /* ============ NAČÍTANIE ============ */
   async function init() {
     render();
@@ -506,26 +619,42 @@
       catch (e) { console.error("[rezervácia]", e); }
     }
     if (!store) store = localStore();
-    if (store.config) {
-      applyRemoteConfig(await store.config());
-      state.players = Math.min(B.maxPlayers, Math.max(B.minPlayers, state.players));
-      render();
-    }
+    const [c, p] = await Promise.all([store.config ? store.config() : null, store.packages ? store.packages() : null]);
+    applyRemoteConfig(c);
+    pkgRaw = p;
+    if (!webPkgs().length) state.what = "laser";
+    if (!state.moved) state.step = steps()[0];
+    state.players = clampPl(state.players);
+    render();
     const [from, to] = range();
     unwatch = store.watch(from, to, busy => {
       state.busy = busy;
       state.loaded = true;
       dropTaken();
-      if (state.step === 2 || state.step === 1) render();
+      if (state.step !== "form" && state.step !== "done") render();
     }, err => {
       console.error("[rezervácia]", err);
       state.error = "Voľné časy sa nepodarilo načítať. Skúste obnoviť stránku alebo nám zavolajte na " + B.phone + ".";
       render();
     });
+    if (store.watchPk) unwatchPk = store.watchPk(from, to, pk => {
+      state.pk = pk;
+      dropTaken();
+      if (state.step !== "form" && state.step !== "done") render();
+    });
   }
 
-  /* Ak si vybraný čas medzitým rezervoval niekto iný, odoberieme ho. */
+  /* Ak si vybraný čas medzitým rezervoval niekto iný, odoberieme ho (balíček celý). */
   function dropTaken() {
+    if (state.sending) return;   // vlastná práve odoslaná rezervácia už je v obsadených
+    const P = curPkg();
+    if (P) {
+      if (state.mStart && !pkgStartOk(state.mDay, state.mStart, P, state.mOrder)) {
+        state.notice = "Začiatok " + dayLabel(state.mDay) + " o " + state.mStart + " si medzitým rezervoval niekto iný, vyberte prosím iný.";
+        clearStart();
+      }
+      return;
+    }
     const lost = [];
     for (const [key, it] of state.selected) if (takenByOthers(it.date, it.time)) { state.selected.delete(key); lost.push(it); }
     if (lost.length) state.notice = "Čas " + lost.map(itemLabel).join(", ") + " si medzitým rezervoval niekto iný, odobrali sme ho z výberu.";
@@ -533,11 +662,29 @@
 
   /* ============ VYKRESLENIE ============ */
   function stepsBar() {
-    const names = ["Počet hráčov", "Termín", "Vaše údaje"];
-    return '<ol class="rz-steps">' + names.map((n, i) => {
-      const s = i + 1, cls = s < state.step ? "done" : s === state.step ? "current" : "";
-      return `<li class="${cls}"${s === state.step ? ' aria-current="step"' : ""}><em>${s}</em><span>${n}</span></li>`;
+    const s = steps(), cur = s.indexOf(state.step);
+    return '<ol class="rz-steps">' + s.map((n, i) => {
+      const cls = i < cur ? "done" : i === cur ? "current" : "";
+      return `<li class="${cls}"${i === cur ? ' aria-current="step"' : ""}><em>${i + 1}</em><span>${STEP_LABEL[n]}</span></li>`;
     }).join("") + "</ol>";
+  }
+  const noticeHtml = () => (state.notice ? `<p class="rz-status warn" role="status">${esc(state.notice)}</p>` : "");
+  const navHtml = (nextLabel, nextDisabled) => {
+    const first = steps().indexOf(state.step) === 0;
+    return `<div class="rz-nav">${first ? "<span></span>" : '<button type="button" class="rz-btn ghost" data-act="back">Späť</button>'}<button type="button" class="rz-btn" data-act="next"${nextDisabled ? " disabled" : ""}>${nextLabel || "Pokračovať"}</button></div>`;
+  };
+
+  /* 1. krok, keď sú na webe balíčky: laser game alebo balíček */
+  function viewWhat() {
+    const opt = (val, title, sub, text) => `<button type="button" class="rz-opt${state.what === val ? " on" : ""}" data-act="what" data-what="${esc(val)}" aria-pressed="${state.what === val}"><b>${title}</b><small>${sub}</small>${text ? `<span>${text}</span>` : ""}</button>`;
+    return `
+      <h2>Čo si rezervujete?</h2>
+      <div class="rz-opts">
+        ${opt("laser", "🔫 Laser game", `${B.minPlayers}–${B.maxPlayers} hráčov, hra ${B.game} min`, "Počet hier a časy si vyberiete sami.")}
+        ${webPkgs().map(P => opt(P.id, "🎁 " + esc(P.name), esc(pkgText(P) + ", " + (P.webMin || B.minPlayers) + "–" + Math.max(P.webMin || B.minPlayers, P.webMax || B.maxPlayers) + " ľudí"), esc(P.webText))).join("")}
+      </div>
+      ${noticeHtml()}
+      ${navHtml("Pokračovať", !state.what)}`;
   }
 
   /* Výber ponuky (pred alebo po počte hráčov – podľa nastavenia v appke). */
@@ -554,17 +701,20 @@
       ${p && state.players < p.minPlayers ? `<p class="rz-offer">Ponuka ${offerName(p)} platí od ${p.minPlayers} hráčov – zatiaľ máte ${state.players}.</p>` : ""}`;
   }
   function viewPlayers() {
+    const P = curPkg();
     const stepper = `
       <h2>Koľko vás bude?</h2>
-      <p class="rz-sub">Počet hráčov vrátane vás (${B.minPlayers}–${B.maxPlayers}).</p>
+      <p class="rz-sub">${P ? `Počet ľudí na balíček ${esc(P.name)}` : "Počet hráčov vrátane vás"} (${minPl()}–${maxPl()}).</p>
       <div class="rz-stepper">
-        <button type="button" data-act="minus" aria-label="Menej hráčov"${state.players <= B.minPlayers ? " disabled" : ""}>−</button>
+        <button type="button" data-act="minus" aria-label="Menej"${state.players <= minPl() ? " disabled" : ""}>−</button>
         <output aria-live="polite">${state.players}</output>
-        <button type="button" data-act="plus" aria-label="Viac hráčov"${state.players >= B.maxPlayers ? " disabled" : ""}>+</button>
+        <button type="button" data-act="plus" aria-label="Viac"${state.players >= maxPl() ? " disabled" : ""}>+</button>
       </div>`;
+    const after = steps().indexOf("players") > steps().indexOf("term");   // termín už vybrali → ukázať, čo z ponuky majú
     return (B.offerStep === "before" ? viewOfferPick() + stepper : stepper + viewOfferPick()) + `
-      ${state.notice ? `<p class="rz-status warn" role="status">${esc(state.notice)}</p>` : ""}
-      <div class="rz-nav"><span></span><button type="button" class="rz-btn" data-act="to2">Pokračovať</button></div>`;
+      ${after ? offerHints() : ""}
+      ${noticeHtml()}
+      ${navHtml()}`;
   }
 
   function viewMonth(first) {
@@ -613,14 +763,54 @@
       <div class="rz-slots">${slots}</div>`;
   }
 
+  /* balíček: začiatky v deň (voľný = všetky jeho hry voľné a iný balíček nezačína príliš blízko) */
+  function viewPkgTimes(P) {
+    if (!state.day) return '<p class="rz-hint">Vyberte deň v kalendári a ukážu sa voľné začiatky.</p>';
+    if (!state.loaded) return '<p class="rz-hint">Načítavam voľné časy…</p>';
+    const times = timesFor(state.day);
+    if (!times.length) return `<p class="rz-hint">${hoursFor(state.day) ? "V tento deň už nie je voľný čas." : "V tento deň je zatvorené."}</p>`;
+    const slots = times.map(t => {
+      const picked = state.mStart === t && state.mDay === state.day, ok = picked || pkgStartOk(state.day, t, P, state.mOrder);
+      const st = picked ? "picked" : ok ? "free" : "busy", lbl = picked ? "vybrané" : ok ? "začiatok" : "obsadené";
+      return `<button type="button" class="rz-slot ${st}" data-act="pstart" data-time="${t}" aria-pressed="${picked}" aria-label="začiatok ${t}, ${lbl}"${ok ? "" : " disabled"}><b>${t}</b><small>${lbl}</small></button>`;
+    }).join("");
+    return `
+      <h3 class="rz-dayname" id="rz-times">${dayLabel(state.day)} – kedy začnete?</h3>
+      <div class="rz-legend"><span class="free">voľný začiatok</span><span class="picked">vybrané</span><span class="busy">obsadené</span></div>
+      <div class="rz-slots">${slots}</div>`;
+  }
+  /* rozpis balíčka: hry a atrakcie */
+  function pkgPlan(P, date, start, order) {
+    const g = pkgGames(start, order, P), a = P.attrMin ? pkgAttr(start, order, P) : null;
+    return [["🎁 " + esc(P.name), dayLabel(date) + " o " + start], ["🔫 Laser game", g.join(" · ")]]
+      .concat(a ? [["🎮 " + esc(P.attrText || "Atrakcie"), "cca " + toTime(a[0]) + "–" + toTime(a[1])]] : []);
+  }
+
   function viewTerm() {
+    const P = curPkg();
+    if (P) {
+      const plan = state.mStart ? pkgPlan(P, state.mDay, state.mStart, state.mOrder) : null;
+      return `
+        <h2>Vyberte deň a začiatok</h2>
+        <p class="rz-sub">🎁 ${esc(P.name)}: ${esc(pkgText(P))}. Stačí vybrať začiatok, hry vám rozpíšeme sami (každá ${B.game} min, medzi nimi pauza).</p>
+        ${P.attrMin && P.games ? `<div class="rz-seg" role="group" aria-label="Poradie"><button type="button" class="${state.mOrder === "games" ? "on" : ""}" data-act="order" data-order="games" aria-pressed="${state.mOrder === "games"}">🔫 Najprv laser game</button><button type="button" class="${state.mOrder === "attr" ? "on" : ""}" data-act="order" data-order="attr" aria-pressed="${state.mOrder === "attr"}">🎮 Najprv ${esc(P.attrText || "atrakcie")}</button></div>` : ""}
+        <div class="rz-months">${monthsShown().map(viewMonth).join("")}</div>
+        <div class="rz-times">${viewPkgTimes(P)}</div>
+        ${noticeHtml()}
+        ${state.error ? `<p class="rz-status err" role="alert">${esc(state.error)}</p>` : ""}
+        <div class="rz-picked">
+          <h3>Váš balíček</h3>
+          ${plan ? "<ul>" + plan.map(([a, b]) => `<li><span>${a}</span><b>${b}</b></li>`).join("") + "</ul>" : '<p class="rz-hint">Zatiaľ nemáte vybraný začiatok.</p>'}
+        </div>
+        ${navHtml("Pokračovať", !state.mStart)}`;
+    }
     const items = sortedItems(), free = freeKeys();
     return `
       <h2>Vyberte deň a čas</h2>
       <p class="rz-sub">Jedna hra trvá ${B.game} minút. Môžete si vybrať aj viac hier, medzi nimi máte vždy pauzu na oddych.</p>
       <div class="rz-months">${monthsShown().map(viewMonth).join("")}</div>
       <div class="rz-times">${viewTimes()}</div>
-      ${state.notice ? `<p class="rz-status warn" role="status">${esc(state.notice)}</p>` : ""}
+      ${noticeHtml()}
       ${state.error ? `<p class="rz-status err" role="alert">${esc(state.error)}</p>` : ""}
       <div class="rz-picked">
         <h3>Vaše hry${items.length ? " (" + games(items.length) + ")" : ""}</h3>
@@ -629,21 +819,24 @@
           : '<p class="rz-hint">Zatiaľ nemáte vybraný žiadny čas.</p>'}
         ${offerHints()}
       </div>
-      <div class="rz-nav"><button type="button" class="rz-btn ghost" data-act="to1">Späť</button><button type="button" class="rz-btn" data-act="to3"${items.length ? "" : " disabled"}>Pokračovať</button></div>`;
+      ${navHtml("Pokračovať", !items.length)}`;
   }
 
   function viewForm() {
-    const items = sortedItems();
+    const items = sortedItems(), P = curPkg();
+    const rows = P && state.mStart
+      ? `<li><span>Počet ľudí</span><b>${state.players}</b></li>` + pkgPlan(P, state.mDay, state.mStart, state.mOrder).map(([a, b]) => `<li><span>${a}</span><b>${b}</b></li>`).join("")
+      : `<li><span>Počet hráčov</span><b>${state.players}</b></li>
+        ${offerStepOn() && state.offerPick ? `<li><span>Vybraná ponuka</span><b>${state.offerPick === "none" ? "len laser game" : "🎁 " + esc(state.offerPick)}</b></li>` : ""}
+        <li><span>${items.length > 1 ? "Hry" : "Hra"}</span><b>${items.map(it => itemLabel(it) + (freeKeys().has(it.date + " " + it.time) ? " (zadarmo)" : "")).join("<br>")}</b></li>
+        ${freeKeys().size ? `<li><span>Ponuka ${offerName(cur())}</span><b>${games(freeKeys().size)} zadarmo</b></li>` : ""}`;
     return `
       <h2>Vaše údaje</h2>
       <ul class="rz-summary">
-        <li><span>Počet hráčov</span><b>${state.players}</b></li>
-        ${offerStepOn() && state.offerPick ? `<li><span>Vybraná ponuka</span><b>${state.offerPick === "none" ? "len laser game" : "🎁 " + esc(state.offerPick)}</b></li>` : ""}
-        <li><span>${items.length > 1 ? "Hry" : "Hra"}</span><b>${items.map(it => itemLabel(it) + (freeKeys().has(it.date + " " + it.time) ? " (zadarmo)" : "")).join("<br>")}</b></li>
-        ${freeKeys().size ? `<li><span>Ponuka ${offerName(cur())}</span><b>${games(freeKeys().size)} zadarmo</b></li>` : ""}
+        ${rows}
         <li><span>Platba</span><b>na mieste</b></li>
       </ul>
-      ${offerHints()}
+      ${P ? "" : offerHints()}
       <form class="rz-form" novalidate>
         <label>Meno a priezvisko<input name="name" required minlength="3" maxlength="80" autocomplete="name"></label>
         <div class="rz-row">
@@ -653,7 +846,7 @@
         <label class="rz-check"><input type="checkbox" name="consent" required>
           <span>Súhlasím so <a href="${esc(B.privacyUrl)}" target="_blank" rel="noopener">spracovaním osobných údajov</a> na účely rezervácie.</span></label>
         <p class="rz-status" role="status" aria-live="polite"></p>
-        <div class="rz-nav"><button type="button" class="rz-btn ghost" data-act="to2">Späť</button><button type="submit" class="rz-btn">Dokončiť rezerváciu</button></div>
+        <div class="rz-nav"><button type="button" class="rz-btn ghost" data-act="back">Späť</button><button type="submit" class="rz-btn">Dokončiť rezerváciu</button></div>
       </form>`;
   }
 
@@ -663,8 +856,9 @@
       <div class="rz-done">
         <div class="rz-done-icon" aria-hidden="true">✓</div>
         <h2>Rezervácia je potvrdená</h2>
-        <p>${players(d.players)}</p>
+        <p>${d.pkg ? "🎁 " + esc(d.pkg) + " · " + people(d.players) : players(d.players)}</p>
         <ul>${d.items.map(it => "<li>" + itemLabel(it) + "</li>").join("")}</ul>
+        ${d.attr ? `<p>${d.attr}</p>` : ""}
         <p class="rz-sub">${d.mailed
           ? "Potvrdenie sme poslali na <b>" + esc(d.email) + "</b>. Ak ho nevidíte, pozrite aj priečinok spam."
           : "Tešíme sa na vás. Ak potrebujete niečo zmeniť, zavolajte nám na " + esc(B.phone) + "."}</p>
@@ -679,16 +873,16 @@
 
   function render() {
     let body;
-    if (state.step === 4) body = viewDone();
-    else body = stepsBar() + (state.step === 1 ? viewPlayers() : state.step === 2 ? viewTerm() : viewForm());
-    root.innerHTML = testBanner() + `<div class="rz-card">${body}</div>` + (state.step === 2 ? offerModal() : "");
-    if (state.step === 2 && state.offerModal) {
+    if (state.step === "done") body = viewDone();
+    else body = stepsBar() + (state.step === "what" ? viewWhat() : state.step === "players" ? viewPlayers() : state.step === "term" ? viewTerm() : viewForm());
+    root.innerHTML = testBanner() + `<div class="rz-card">${body}</div>` + (state.step !== "done" ? offerModal() : "");
+    if (state.offerModal) {
       const yes = root.querySelector('[data-act="offer-yes"]');
       if (yes) yes.focus({ preventScroll: true });
       focusKey = null;
     }
     if (focusKey) {
-      const el = root.querySelector(`[data-key="${focusKey}"]`) || root.querySelector(`[data-date="${focusKey}"]`);
+      const el = root.querySelector(`[data-key="${focusKey}"]`) || root.querySelector(`[data-date="${focusKey}"]`) || root.querySelector(`[data-time="${focusKey}"]`);
       if (el) el.focus({ preventScroll: true });
       focusKey = null;
     }
@@ -696,9 +890,23 @@
 
   function goStep(n) {
     state.step = n;
+    state.moved = true;
     state.notice = "";
     render();
     if (root.getBoundingClientRect().top < 0) root.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  /* Pred posledným krokom (údaje) pripomenúť ponuku – ktorú majú, alebo na ktorú im chýbajú ľudia. */
+  function goNext() {
+    const s = state.step, next = nextStep();
+    if (s === "what" && !state.what) { state.notice = "Vyberte, čo si rezervujete."; render(); return; }
+    if (s === "players" && offerStepOn() && state.offerPick === null) { state.notice = "Vyberte si ponuku (alebo „Len laser game“)."; render(); return; }
+    if (s === "term" && !state.selected.size) return;
+    if (next === "form" && !curPkg()) {
+      const o = cur(), n = nextOffer(), day = offerDay(o) || offerDay(n);
+      if (day) { state.offerModal = offerDay(o) ? { date: day, kind: "continue", o } : { date: day, kind: "friends", o: n }; render(); return; }
+    }
+    goStep(next);
   }
 
   /* ============ OVLÁDANIE ============ */
@@ -708,20 +916,21 @@
     const act = b.dataset.act;
 
     if (act === "minus" || act === "plus") {
-      state.players = Math.min(B.maxPlayers, Math.max(B.minPlayers, state.players + (act === "plus" ? 1 : -1)));
+      state.players = clampPl(state.players + (act === "plus" ? 1 : -1));
       render();
+    } else if (act === "what") {
+      const v = b.dataset.what;
+      if (v !== state.what) {
+        state.what = v;
+        clearStart(); state.offerPick = null; state.offerShown.clear();
+        const P = curPkg();
+        state.players = clampPl(P ? P.players : state.players);
+      }
+      state.notice = "";
+      goNext();
     } else if (act === "pick") { state.offerPick = b.dataset.pick; state.notice = ""; render(); }
-    else if (act === "to1") goStep(1);
-    else if (act === "to2") {
-      if (state.step === 1 && offerStepOn() && state.offerPick === null) { state.notice = "Vyberte si ponuku (alebo „Len laser game“)."; render(); return; }
-      goStep(2);
-    }
-    else if (act === "to3") {
-      // Pri Pokračovať pripomenúť ponuku (ktorú majú, alebo na ktorú im chýbajú ľudia)
-      const o = cur(), n = nextOffer(), day = offerDay(o) || offerDay(n);
-      if (day) { state.offerModal = offerDay(o) ? { date: day, kind: "continue", o } : { date: day, kind: "friends", o: n }; render(); }
-      else goStep(3);
-    }
+    else if (act === "next") goNext();
+    else if (act === "back") goStep(prevStep());
     else if (act === "day") {
       state.day = b.dataset.date;
       state.notice = "";
@@ -729,6 +938,20 @@
       render();
       const times = document.getElementById("rz-times");
       if (times && times.getBoundingClientRect().top > window.innerHeight - 120) times.scrollIntoView({ behavior: "smooth", block: "start" });
+    } else if (act === "pstart") {
+      state.notice = "";
+      pickStart(state.day, b.dataset.time);
+      focusKey = b.dataset.time;
+      render();
+    } else if (act === "order") {
+      state.mOrder = b.dataset.order === "attr" ? "attr" : "games";
+      state.notice = "";
+      const P = curPkg();
+      if (P && state.mStart) {
+        if (pkgStartOk(state.mDay, state.mStart, P, state.mOrder)) pickStart(state.mDay, state.mStart);
+        else { state.notice = "Pri tomto poradí nie je začiatok o " + state.mStart + " voľný, vyberte prosím iný."; clearStart(); }
+      }
+      render();
     } else if (act === "slot") {
       const key = b.dataset.key, [date, time] = key.split(" ");
       state.notice = "";
@@ -748,17 +971,21 @@
     } else if (act === "offer-yes" || act === "offer-no" || act === "offer-players") {
       const m = state.offerModal;
       state.offerModal = null;
-      if (act === "offer-players") { goStep(1); return; }
-      if (act === "offer-no" && m && m.kind !== "pick") { goStep(3); return; }   // pri Pokračovať: ísť ďalej bez ponuky
-      if (act === "offer-yes" && m) state.day = m.date;
-      render();
+      if (act === "offer-players") { goStep("players"); return; }
+      if (act === "offer-no" && m && m.kind !== "pick") { goStep("form"); return; }   // pri Pokračovať: ísť ďalej bez ponuky
+      if (act === "offer-yes" && m) { state.day = m.date; if (state.step !== "term") { goStep("term"); } else render(); }
+      else render();
       if (act === "offer-yes") {
         const el = document.getElementById("rz-times");
         if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
       }
     } else if (act === "remove") { state.selected.delete(b.dataset.key); render(); }
-    else if (act === "again") { state.done = null; state.selected.clear(); state.offerShown.clear(); state.day = null; goStep(1); }
-    else if (act === "reset" && store && store.reset) { store.reset(); state.selected.clear(); render(); }
+    else if (act === "again") {
+      state.done = null; clearStart(); state.offerShown.clear(); state.day = null; state.offerPick = null; state.mOrder = "games";
+      state.what = webPkgs().length ? null : "laser"; state.players = clampPl(B.minPlayers);
+      goStep(steps()[0]);
+    }
+    else if (act === "reset" && store && store.reset) { store.reset(); clearStart(); render(); }
   });
 
   root.addEventListener("submit", e => { e.preventDefault(); submit(e.target); });
@@ -779,6 +1006,7 @@
     body.append("email", data.email);
     body.append("name", data.name);
     body.append("players", String(data.players));
+    if (data.pkg) body.append("pkg", data.pkg);
     Object.keys(data.games).forEach(g => body.append("games[]", g));
     const ctrl = typeof AbortController === "function" ? new AbortController() : null;
     const timer = ctrl && setTimeout(() => ctrl.abort(), 12000);
@@ -800,25 +1028,31 @@
     const c = { name: f.get("name").trim(), email: f.get("email").trim(), phone: normalizePhone(f.get("phone").trim()) };
     if (!/^\+?\d{9,15}$/.test(c.phone)) { say("Skontrolujte prosím telefónne číslo.", "err"); form.phone.focus(); return; }
 
-    const items = sortedItems(), btn = form.querySelector('[type="submit"]');
-    if (items.some(it => takenByOthers(it.date, it.time))) { dropTaken(); goStep(2); return; }
+    const items = sortedItems(), btn = form.querySelector('[type="submit"]'), P = curPkg();
+    if (P ? !state.mStart || !pkgStartOk(state.mDay, state.mStart, P, state.mOrder) : items.some(it => takenByOthers(it.date, it.time))) { dropTaken(); goStep("term"); return; }
 
     const gamesMap = {};
     items.forEach(it => { gamesMap[it.date + "_" + it.time.replace(":", "")] = true; });
     const data = { name: c.name, phone: c.phone, email: c.email, players: state.players, games: gamesMap, consent: true };
-    if (offerStepOn() && state.offerPick) data.offerPick = state.offerPick;   // čo si zákazník vybral (appka to ukáže)
+    let pk = null, attr = "";
+    if (P) {
+      Object.assign(data, { pkg: P.id, mStart: state.mStart, mOrder: state.mOrder });
+      pk = { date: state.mDay, time: state.mStart };
+      if (P.attrMin) { const a = pkgAttr(state.mStart, state.mOrder, P); attr = "🎮 " + esc(P.attrText || "Atrakcie") + " cca " + toTime(a[0]) + "–" + toTime(a[1]); }
+    } else if (offerStepOn() && state.offerPick) data.offerPick = state.offerPick;   // čo si zákazník vybral (appka to ukáže)
 
     state.sending = true; btn.disabled = true; say("Odosielam rezerváciu…");
     try {
-      const id = await store.book(items, data);
+      const id = await store.book(items, data, pk);
       let mailed = false;
       if (B.emailToCustomer && CFG.mailUrl && store.mode === "firebase") { say("Posielam potvrdenie na e-mail…"); mailed = await sendMail(id, data); }
-      state.done = { items, email: c.email, players: state.players, mailed };
-      state.selected.clear();
-      goStep(4);
+      state.done = { items, email: c.email, players: state.players, mailed, pkg: P ? P.name : "", attr };
+      clearStart();
+      goStep("done");
     } catch (err) {
       console.error("[rezervácia]", err);
-      if (err.code === "taken") say("Niektorý z vybraných časov si medzitým rezervoval niekto iný. Vráťte sa späť a vyberte iný čas.", "err");
+      if (err.code === "taken") say(P ? "Tento začiatok si medzitým rezervoval niekto iný. Vráťte sa späť a vyberte iný, alebo nám zavolajte na " + B.phone + "."
+        : "Niektorý z vybraných časov si medzitým rezervoval niekto iný. Vráťte sa späť a vyberte iný čas.", "err");
       else say("Rezerváciu sa nepodarilo odoslať. Skúste to znova alebo nám zavolajte na " + B.phone + ".", "err");
     } finally {
       state.sending = false;
