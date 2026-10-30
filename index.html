@@ -269,6 +269,9 @@
   const games = n => n + (n === 1 ? " hra" : n < 5 ? " hry" : " hier");
   const players = n => n + (n < 5 ? " hráči" : " hráčov");
   const people = n => n + (n === 1 ? " osoba" : n < 5 ? " osoby" : " osôb");
+  /* laser/<env>/pk/<deň>/<OD>_<DO> = kedy má balíček atrakcie (HHMM, po polnoci 24xx); bez atrakcií OD = DO = začiatok */
+  const hm = m => toTime(m).replace(":", "");
+  const pkWin = k => { const m = /^(\d\d)(\d\d)_(\d\d)(\d\d)$/.exec(k); return m ? { from: +m[1] * 60 + +m[2], to: +m[3] * 60 + +m[4] } : null; };
 
   /* ============ ÚLOŽISKO ============ */
   /* watch(from, to, cb) → cb({ "2026-10-24": Set{"18:00", …} }) pri každej zmene; vracia funkciu na zrušenie.
@@ -287,6 +290,11 @@
       Object.keys(all || {}).filter(d => d >= from && d <= to).forEach(d => { out[d] = new Set(Object.keys(all[d]).map(k => k.slice(0, 2) + ":" + k.slice(2))); });
       return out;
     };
+    const wins = (all, from, to) => {
+      const out = {};
+      Object.keys(all || {}).filter(d => d >= from && d <= to).forEach(d => { out[d] = Object.keys(all[d]).map(pkWin).filter(Boolean); });
+      return out;
+    };
     return {
       mode: "test",
       watch(from, to, cb) {
@@ -295,7 +303,7 @@
         return () => listeners.delete(run);
       },
       watchPk(from, to, cb) {
-        const run = () => cb(sets(read().pk, from, to));
+        const run = () => cb(wins(read().pk, from, to));
         listeners.add(run); run();
         return () => listeners.delete(run);
       },
@@ -307,7 +315,7 @@
         const id = "t" + Date.now().toString(36);
         db.bookings[id] = Object.assign({}, data, { createdAt: Date.now() });
         items.forEach(it => { (db.slots[it.date] = db.slots[it.date] || {})[it.time.replace(":", "")] = id; });
-        if (pk) { db.pk = db.pk || {}; (db.pk[pk.date] = db.pk[pk.date] || {})[pk.time.replace(":", "")] = id; }
+        if (pk) { db.pk = db.pk || {}; (db.pk[pk.date] = db.pk[pk.date] || {})[pk.key] = id; }
         localStorage.setItem(KEY, JSON.stringify(db));
         notify();
         return id;
@@ -343,7 +351,11 @@
       },
       watchPk(from, to, cb) {
         const q = fb.query(fb.ref(db, path + "/pk"), fb.orderByKey(), fb.startAt(from), fb.endAt(to));
-        return fb.onValue(q, snap => cb(sets(snap)), e => { console.warn("[rezervácia] začiatky balíčkov", e); cb({}); });
+        return fb.onValue(q, snap => {
+          const out = {};
+          snap.forEach(d => { out[d.key] = Object.keys(d.val() || {}).map(pkWin).filter(Boolean); });
+          cb(out);
+        }, e => { console.warn("[rezervácia] atrakcie balíčkov", e); cb({}); });
       },
       /* Rezervácia aj obsadenie časov v jednom zápise: buď prejde celé, alebo nič.
          Pravidlá Firebase nedovolia zapísať čas, ktorý už niekto má.
@@ -355,7 +367,7 @@
         u[path + "/bookings/" + id] = Object.assign(rest, { createdAt: fb.serverTimestamp(), status: "new" });
         u[path + "/contacts/" + id] = { phone: data.phone, email: data.email };
         items.forEach(it => { u[path + "/slots/" + it.date + "/" + it.time.replace(":", "")] = id; });
-        if (pk) u[path + "/pk/" + pk.date + "/" + pk.time.replace(":", "")] = id;
+        if (pk) u[path + "/pk/" + pk.date + "/" + pk.key] = id;
         try { await fb.update(fb.ref(db), u); }
         catch (e) {
           if (String(e.code || e.message).toUpperCase().includes("PERMISSION")) { const err = new Error("taken"); err.code = "taken"; throw err; }
@@ -450,7 +462,8 @@
   const PKG_NUM = { games: [1, 12, 3], attrMin: [0, 600, 60], pizzaMin: [0, 240, 30], spacing: [0, 600, 60], players: [1, 30, 10], webMin: [0, 30, 0], webMax: [0, 30, 0] };
   let pkgRaw = null;
   function pkgNorm(p) {
-    const o = { name: String((p && p.name) || "Balíček").slice(0, 40), attrText: String((p && p.attrText != null ? p.attrText : "VR + PS")).slice(0, 40), webText: String((p && p.webText) || "").slice(0, 200) };
+    const o = { name: String((p && p.name) || "Balíček").slice(0, 40), attrText: String((p && p.attrText != null ? p.attrText : "VR + PS")).slice(0, 40), webText: String((p && p.webText) || "").slice(0, 200),
+      icon: Array.from(String((p && p.icon) || "").replace(/[<>"'&`\\]/g, "").trim()).slice(0, 6).join("") || "🎁" };   // ikonku mení vedúci v appke
     Object.keys(PKG_NUM).forEach(k => { const [lo, hi, d] = PKG_NUM[k], v = parseInt(p && p[k], 10); o[k] = Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : d; });
     return o;
   }
@@ -473,8 +486,10 @@
   }
   const pkgText = P => games(P.games) + " laser game" + (P.attrMin ? " + " + P.attrText + " " + P.attrMin + " min" : "");
   const maxSpacing = P => Math.max(P.spacing, ...Object.values(pkgs()).map(p => p.spacing));
+  /* kedy má balíček atrakcie [od, do] v minútach; bez atrakcií [začiatok, začiatok] */
+  const pkgWin = (start, order, P) => (P.attrMin ? pkgAttr(start, order, P) : [toMin(start), toMin(start)]);
   /* Začiatok balíčka je voľný: všetky jeho hry sú v otváracích hodinách a voľné, celý balíček stihne do zatvorenia
-     a iný balíček nezačína bližšie ako rozostup. */
+     a iný balíček nemá atrakcie v rovnakom čase (VR + PS majú naraz len jedni); balíčky bez atrakcií držia rozostup. */
   function pkgStartOk(date, start, P, order) {
     const h = hoursFor(date);
     if (!h || date + " " + start < earliest() || toMin(start) < h[0]) return false;
@@ -482,9 +497,12 @@
       const m = toMin(t);
       if (m < h[0] || m + B.game > h[1] || takenByOthers(date, t)) return false;
     }
-    if (P.attrMin && pkgAttr(start, order, P)[1] > h[1]) return false;
-    const other = state.pk[date], sp = maxSpacing(P);
-    if (other) for (const s of other) if (Math.abs(toMin(s) - toMin(start)) < sp) return false;
+    const w = pkgWin(start, order, P);
+    if (P.attrMin && w[1] > h[1]) return false;
+    for (const o of state.pk[date] || []) {
+      if (w[1] > w[0] && o.to > o.from) { if (w[0] < o.to && o.from < w[1]) return false; }
+      else if (w[1] === w[0] && o.to === o.from && Math.abs(o.from - w[0]) < maxSpacing(P)) return false;
+    }
     return true;
   }
   function pickStart(date, start) {
@@ -681,7 +699,7 @@
       <h2>Čo si rezervujete?</h2>
       <div class="rz-opts">
         ${opt("laser", "🔫 Laser game", `${B.minPlayers}–${B.maxPlayers} hráčov, hra ${B.game} min`, "Počet hier a časy si vyberiete sami.")}
-        ${webPkgs().map(P => opt(P.id, "🎁 " + esc(P.name), esc(pkgText(P) + ", " + (P.webMin || B.minPlayers) + "–" + Math.max(P.webMin || B.minPlayers, P.webMax || B.maxPlayers) + " ľudí"), esc(P.webText))).join("")}
+        ${webPkgs().map(P => opt(P.id, esc(P.icon) + " " + esc(P.name), esc(pkgText(P) + ", " + (P.webMin || B.minPlayers) + "–" + Math.max(P.webMin || B.minPlayers, P.webMax || B.maxPlayers) + " ľudí"), esc(P.webText))).join("")}
       </div>
       ${noticeHtml()}
       ${navHtml("Pokračovať", !state.what)}`;
@@ -782,7 +800,7 @@
   /* rozpis balíčka: hry a atrakcie */
   function pkgPlan(P, date, start, order) {
     const g = pkgGames(start, order, P), a = P.attrMin ? pkgAttr(start, order, P) : null;
-    return [["🎁 " + esc(P.name), dayLabel(date) + " o " + start], ["🔫 Laser game", g.join(" · ")]]
+    return [[esc(P.icon) + " " + esc(P.name), dayLabel(date) + " o " + start], ["🔫 Laser game", g.join(" · ")]]
       .concat(a ? [["🎮 " + esc(P.attrText || "Atrakcie"), "cca " + toTime(a[0]) + "–" + toTime(a[1])]] : []);
   }
 
@@ -792,7 +810,7 @@
       const plan = state.mStart ? pkgPlan(P, state.mDay, state.mStart, state.mOrder) : null;
       return `
         <h2>Vyberte deň a začiatok</h2>
-        <p class="rz-sub">🎁 ${esc(P.name)}: ${esc(pkgText(P))}. Stačí vybrať začiatok, hry vám rozpíšeme sami (každá ${B.game} min, medzi nimi pauza).</p>
+        <p class="rz-sub">${esc(P.icon)} ${esc(P.name)}: ${esc(pkgText(P))}. Stačí vybrať začiatok, hry vám rozpíšeme sami (každá ${B.game} min, medzi nimi pauza).</p>
         ${P.attrMin && P.games ? `<div class="rz-seg" role="group" aria-label="Poradie"><button type="button" class="${state.mOrder === "games" ? "on" : ""}" data-act="order" data-order="games" aria-pressed="${state.mOrder === "games"}">🔫 Najprv laser game</button><button type="button" class="${state.mOrder === "attr" ? "on" : ""}" data-act="order" data-order="attr" aria-pressed="${state.mOrder === "attr"}">🎮 Najprv ${esc(P.attrText || "atrakcie")}</button></div>` : ""}
         <div class="rz-months">${monthsShown().map(viewMonth).join("")}</div>
         <div class="rz-times">${viewPkgTimes(P)}</div>
@@ -856,7 +874,7 @@
       <div class="rz-done">
         <div class="rz-done-icon" aria-hidden="true">✓</div>
         <h2>Rezervácia je potvrdená</h2>
-        <p>${d.pkg ? "🎁 " + esc(d.pkg) + " · " + people(d.players) : players(d.players)}</p>
+        <p>${d.pkg ? esc(d.pkgIcon || "🎁") + " " + esc(d.pkg) + " · " + people(d.players) : players(d.players)}</p>
         <ul>${d.items.map(it => "<li>" + itemLabel(it) + "</li>").join("")}</ul>
         ${d.attr ? `<p>${d.attr}</p>` : ""}
         <p class="rz-sub">${d.mailed
@@ -1037,7 +1055,8 @@
     let pk = null, attr = "";
     if (P) {
       Object.assign(data, { pkg: P.id, mStart: state.mStart, mOrder: state.mOrder });
-      pk = { date: state.mDay, time: state.mStart };
+      const w = pkgWin(state.mStart, state.mOrder, P);
+      pk = { date: state.mDay, key: hm(w[0]) + "_" + hm(w[1]) };
       if (P.attrMin) { const a = pkgAttr(state.mStart, state.mOrder, P); attr = "🎮 " + esc(P.attrText || "Atrakcie") + " cca " + toTime(a[0]) + "–" + toTime(a[1]); }
     } else if (offerStepOn() && state.offerPick) data.offerPick = state.offerPick;   // čo si zákazník vybral (appka to ukáže)
 
@@ -1046,7 +1065,7 @@
       const id = await store.book(items, data, pk);
       let mailed = false;
       if (B.emailToCustomer && CFG.mailUrl && store.mode === "firebase") { say("Posielam potvrdenie na e-mail…"); mailed = await sendMail(id, data); }
-      state.done = { items, email: c.email, players: state.players, mailed, pkg: P ? P.name : "", attr };
+      state.done = { items, email: c.email, players: state.players, mailed, pkg: P ? P.name : "", pkgIcon: P ? P.icon : "", attr };
       clearStart();
       goStep("done");
     } catch (err) {
