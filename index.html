@@ -396,7 +396,8 @@
         const id = mg.id, ts = fb.serverTimestamp(), bp = path + "/bookings/" + id, u = {}, games = {};
         items.forEach(it => { games[it.date + "_" + it.time.replace(":", "")] = true; });
         Object.assign(u, { [bp + "/games"]: games, [bp + "/players"]: upd.players, [bp + "/status"]: "new", [bp + "/ch"]: ts, [bp + "/chA"]: "move", [bp + "/chOld"]: mg.oldTxt });
-        if (upd.pkg) { u[bp + "/mStart"] = upd.mStart; u[bp + "/mOrder"] = upd.mOrder; }
+        // balíček: nový začiatok; čas atrakcií, ktorý nastavil vedúci ručne (aFrom/aTo), už nemusí sedieť → znova podľa hier
+        if (upd.pkg) { u[bp + "/mStart"] = upd.mStart; u[bp + "/mOrder"] = upd.mOrder; u[bp + "/aFrom"] = null; u[bp + "/aTo"] = null; }
         if (upd.offerPick !== undefined) u[bp + "/offerPick"] = upd.offerPick || null;
         mg.own.forEach(k => { if (!games[k]) u[path + "/slots/" + k.slice(0, 10) + "/" + k.slice(11)] = null; });
         Object.keys(games).forEach(k => { if (!mg.own.has(k)) u[path + "/slots/" + k.slice(0, 10) + "/" + k.slice(11)] = id; });
